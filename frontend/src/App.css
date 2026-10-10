@@ -1289,3 +1289,184 @@ textarea:focus-visible {
     flex-direction: column;
   }
 }
+
+/* FlowPilot Premium Studio — Soft 3D Theme */
+
+:root {
+  --premium-green: #0d9b72;
+  --premium-green-dark: #087f5b;
+  --premium-indigo: #5554d9;
+  --premium-text: #202a3b;
+  --premium-muted: #7d8798;
+  --premium-border: #e4ece8;
+  --premium-shadow: 0 10px 30px rgba(25, 55, 45, 0.06);
+}
+
+body {
+  color: var(--premium-text);
+  background: #f5f8f6;
+}
+
+.app-shell {
+  background:
+    radial-gradient(ellipse at 85% 0%, rgba(13, 155, 114, 0.06), transparent 35%),
+    #f5f8f6;
+}
+
+.sidebar,
+.topbar,
+.properties-panel {
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.sidebar {
+  border-right-color: var(--premium-border);
+}
+
+.brand-mark {
+  background: linear-gradient(145deg, #19b98a, #087f5b);
+  box-shadow: 0 7px 16px rgba(13, 155, 114, 0.24);
+}
+
+.nav-item {
+  transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+  color: var(--premium-green-dark);
+  background: #eef9f4;
+}
+
+.nav-item.active {
+  color: var(--premium-green-dark);
+  background: linear-gradient(100deg, #e8f8f0, #f5fbf7);
+  box-shadow: inset 3px 0 #0d9b72;
+}
+
+.streak-card {
+  border-color: #d8eee2;
+  background: linear-gradient(135deg, #effaf4, #ffffff);
+  box-shadow: 0 5px 16px rgba(25, 120, 80, 0.05);
+}
+
+.welcome-row .eyebrow {
+  color: var(--premium-green-dark);
+}
+
+.live-dot {
+  background: #0dba83;
+  box-shadow: 0 0 0 4px rgba(13, 186, 131, 0.12);
+}
+
+.button-primary {
+  background: linear-gradient(120deg, #10a77b, #087f5b);
+  box-shadow: 0 6px 14px rgba(13, 155, 114, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.button-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(13, 155, 114, 0.25);
+}
+
+.button-secondary {
+  border-color: #dfe9e3;
+  background: #ffffff;
+}
+
+.stat-card,
+.editor-card {
+  border-color: var(--premium-border);
+  box-shadow: var(--premium-shadow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px rgba(25, 55, 45, 0.09);
+}
+
+.stat-icon.green {
+  color: #07845f;
+  background: #e5f8ee;
+}
+
+.mini-workflow-icon {
+  color: var(--premium-green-dark);
+  background: linear-gradient(145deg, #e6f8ee, #f6fcf8);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.9);
+}
+
+.canvas-area {
+  background-color: #f8fbf9;
+  background-image: radial-gradient(#d5e5dc 0.8px, transparent 0.8px);
+}
+
+.workflow-node {
+  border-color: #e0eae4;
+  border-radius: 14px;
+  box-shadow:
+    0 5px 10px rgba(25, 55, 45, 0.04),
+    0 12px 24px rgba(25, 55, 45, 0.035);
+  transition: all 0.2s ease;
+}
+
+.workflow-node:hover {
+  transform: translateY(-3px);
+  border-color: #83cdb0;
+  box-shadow: 0 12px 24px rgba(13, 155, 114, 0.12);
+}
+
+.workflow-node.selected {
+  border-color: #0d9b72;
+  box-shadow:
+    0 0 0 3px rgba(13, 155, 114, 0.12),
+    0 10px 22px rgba(13, 155, 114, 0.09);
+}
+
+.workflow-node.start .node-symbol,
+.property-node-icon.start {
+  color: #087f5b;
+  background: linear-gradient(145deg, #d8f7e7, #effcf5);
+}
+
+.workflow-node.task .node-symbol,
+.property-node-icon.task {
+  color: #5554d9;
+  background: linear-gradient(145deg, #e9eaff, #f6f6ff);
+}
+
+.workflow-node.end .node-symbol,
+.property-node-icon.end {
+  color: #287bb8;
+  background: linear-gradient(145deg, #e1f1ff, #f4faff);
+}
+
+.properties-panel {
+  border-left-color: var(--premium-border);
+}
+
+.property-input:focus {
+  border-color: #65bd9b;
+  box-shadow: 0 0 0 3px rgba(13, 155, 114, 0.1);
+}
+
+.property-hint {
+  color: #087f5b;
+  border-color: #d7eee2;
+  background: #f0faf4;
+}
+
+.canvas-dot,
+.status-dot {
+  background: #0d9b72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
