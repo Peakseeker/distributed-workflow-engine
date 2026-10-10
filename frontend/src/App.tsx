@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import '@xyflow/react/dist/style.css';
+import { useEffect, useState } from 'react'
 import {
   LayoutDashboard,
   Workflow,
@@ -43,6 +44,25 @@ function App() {
   ])
 
   const currentNode = nodes.find((node) => node.id === selectedNode)
+  useEffect(() => {
+  try {
+    const savedDraft = localStorage.getItem('workflow-editor-draft')
+
+    if (savedDraft) {
+      const parsedDraft = JSON.parse(savedDraft)
+
+      if (
+        typeof parsedDraft.workflowName === 'string' &&
+        Array.isArray(parsedDraft.nodes)
+      ) {
+        setWorkflowName(parsedDraft.workflowName)
+        setNodes(parsedDraft.nodes)
+      }
+    }
+  } catch {
+    console.error('Could not load the saved workflow.')
+  }
+}, [])
 
   const updateNode = (field: 'title' | 'description', value: string) => {
     setNodes((previous) =>
