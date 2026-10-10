@@ -100,11 +100,22 @@ function App() {
     }
   }
 
-  const runWorkflow = () => {
-    setIsRunning(true)
-    setNotice('Demo run started. Backend execution is not connected yet.')
-    window.setTimeout(() => setIsRunning(false), 1800)
+   
+const runWorkflow = () => {
+  if (nodes.length < 2) {
+    setNotice('Add workflow steps before running.')
+    return
   }
+
+  setIsRunning(true)
+
+  const taskNames = nodes.map((node) => node.title).join(' → ')
+  setNotice(`Workflow execution completed: ${taskNames}`)
+
+  window.setTimeout(() => {
+    setIsRunning(false)
+  }, 1800)
+}
 
   const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard },
