@@ -1,0 +1,7 @@
+
+# Backend environment variables
+backend/.env
+
+# Backend dependencies and generated files
+backend/node_modules/
+backend/dist/
