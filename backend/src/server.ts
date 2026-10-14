@@ -1,4 +1,4 @@
-
+import workflowRoutes from "./routes/workflowRoutes.js";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -14,6 +14,7 @@ const MONGODB_URI =
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/workflows", workflowRoutes);
 
 app.get("/", (_req, res) => {
   res.json({

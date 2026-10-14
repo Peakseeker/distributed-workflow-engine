@@ -4,8 +4,8 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IWorkflow extends Document {
   name: string;
   description: string;
-  nodes: Record<string, unknown>[];
-  edges: Record<string, unknown>[];
+  nodes: unknown[];
+  edges: unknown[];
   status: "draft" | "active" | "completed" | "failed";
   createdAt: Date;
   updatedAt: Date;
@@ -24,11 +24,11 @@ const WorkflowSchema = new Schema<IWorkflow>(
     },
     nodes: {
       type: [Schema.Types.Mixed],
-      default: [],
+      default: () => [],
     },
     edges: {
       type: [Schema.Types.Mixed],
-      default: [],
+      default: () => [],
     },
     status: {
       type: String,
