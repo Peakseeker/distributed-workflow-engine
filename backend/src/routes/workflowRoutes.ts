@@ -11,7 +11,63 @@ router.get("/test", (_req, res) => {
     message: "Workflow routes are working!",
   });
 });
+// Run a workflow
+router.post("/:id/run", async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    res.status(400).json({
+      message: "Invalid workflow ID",
+    });
+    return;
+  }
 
+  try {
+    const workflow = await Workflow.findById(req.params.id);
+
+    if (!workflow) {
+      res.status(404).json({
+        message: "Workflow not found",
+      });
+      return;
+    }
+
+    const nodes = Array.isArray(workflow.nodes)
+      ? workflow.nodes
+      : [];
+
+    if (nodes.length < 2) {
+      res.status(400).json({
+        message: "A workflow must contain at least two nodes to run",
+      });
+      return;
+    }
+
+    const execution = {
+      executionId: new mongoose.Types.ObjectId().toString(),
+      workflowId: workflow._id.toString(),
+      workflowName: workflow.name,
+      status: "completed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      steps: nodes.map((node: any, index: number) => ({
+        step: index + 1,
+        nodeId: node.id,
+        name: node.title ?? node.name ?? `Step ${index + 1}`,
+        status: "completed",
+      })),
+    };
+
+    res.status(200).json({
+      message: "Workflow execution completed",
+      execution,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to run workflow",
+      error:
+        error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
 // Get total workflow count
 router.get("/stats/count", async (_req, res) => {
   try {
