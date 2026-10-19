@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from 'react'
 import {
   ReactFlow,
@@ -31,6 +32,7 @@ import {
   MoreHorizontal,
   Settings,
   Flame,
+  Trash2,
 } from 'lucide-react'
 
 import './App.css'
@@ -263,6 +265,40 @@ function App() {
     setNotice('New task added successfully.')
   }
 
+  const deleteTask = () => {
+    const nodeToDelete = workflowNodes.find(
+      (node) => node.id === selectedNode,
+    )
+
+    if (!nodeToDelete || nodeToDelete.type !== 'Task') {
+      setNotice('Only Task nodes can be deleted.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${nodeToDelete.title}"?`,
+    )
+
+    if (!confirmed) return
+
+    const updatedNodes = workflowNodes.filter(
+      (node) => node.id !== selectedNode,
+    )
+
+    setWorkflowNodes(updatedNodes)
+    setFlowNodes(createFlowNodes(updatedNodes))
+    setFlowEdges(createFlowEdges(updatedNodes))
+
+    const nextTask = updatedNodes.find((node) => node.type === 'Task')
+    const nextNode = nextTask ?? updatedNodes[0]
+
+    if (nextNode) {
+      setSelectedNode(nextNode.id)
+    }
+
+    setNotice('Task deleted successfully. Click Save to store the changes.')
+  }
+
   const saveWorkflow = async () => {
     try {
       localStorage.setItem(
@@ -325,6 +361,40 @@ function App() {
     }
   }
 
+  const loadExecutions = async () => {
+    if (!workflowId) {
+      setNotice('Save the workflow first to view its execution history.')
+      return
+    }
+
+    setIsLoadingExecutions(true)
+
+    try {
+      const response = await fetch(
+        `${API_URL}/workflows/${workflowId}/executions`,
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load execution history.')
+      }
+
+      setExecutions(data.executions ?? [])
+      setNotice(
+        `Loaded ${data.executions?.length ?? 0} execution record(s).`,
+      )
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : 'Could not load execution history.',
+      )
+    } finally {
+      setIsLoadingExecutions(false)
+    }
+  }
+
   const runWorkflow = async () => {
     if (workflowNodes.length < 2) {
       setNotice('Add workflow steps before running.')
@@ -365,8 +435,6 @@ function App() {
               .join(' → ')}`
           : data.message || 'Workflow execution started.',
       )
-
-      await loadExecutions()
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -375,40 +443,6 @@ function App() {
       )
     } finally {
       setIsRunning(false)
-    }
-  }
-
-  const loadExecutions = async () => {
-    if (!workflowId) {
-      setNotice('Save the workflow first to view its execution history.')
-      return
-    }
-
-    setIsLoadingExecutions(true)
-
-    try {
-      const response = await fetch(
-        `${API_URL}/workflows/${workflowId}/executions`,
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to load execution history.')
-      }
-
-      setExecutions(data.executions ?? [])
-      setNotice(
-        `Loaded ${data.executions?.length ?? 0} execution record(s).`,
-      )
-    } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : 'Could not load execution history.',
-      )
-    } finally {
-      setIsLoadingExecutions(false)
     }
   }
 
@@ -824,6 +858,22 @@ function App() {
                         />
 
                         <div className="property-divider" />
+
+                        {currentNode.type === 'Task' && (
+                          <button
+                            className="button button-secondary"
+                            style={{
+                              width: '100%',
+                              marginTop: '16px',
+                              color: '#dc2626',
+                              borderColor: '#fecaca',
+                            }}
+                            onClick={deleteTask}
+                          >
+                            <Trash2 size={17} />
+                            Delete Task
+                          </button>
+                        )}
 
                         <div className="property-info">
                           <span>Node type</span>
