@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from 'react'
 import {
   ReactFlow,
@@ -48,6 +47,14 @@ type WorkflowNode = {
 type FlowNodeData = {
   label: string
 }
+
+type Execution = {
+  _id: string
+  status: string
+  startedAt?: string
+}
+
+const API_URL = 'http://localhost:5000/api'
 
 const initialWorkflowNodes: WorkflowNode[] = [
   {
@@ -120,6 +127,8 @@ function App() {
   const [workflowName, setWorkflowName] = useState('My First Workflow')
   const [workflowId, setWorkflowId] = useState<string | null>(null)
   const [isRunning, setIsRunning] = useState(false)
+  const [executions, setExecutions] = useState<Execution[]>([])
+  const [isLoadingExecutions, setIsLoadingExecutions] = useState(false)
 
   const [workflowNodes, setWorkflowNodes] =
     useState<WorkflowNode[]>(initialWorkflowNodes)
@@ -140,33 +149,31 @@ function App() {
     try {
       const savedDraft = localStorage.getItem('workflow-editor-draft')
 
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft)
+      if (!savedDraft) return
 
-        if (
-          typeof parsed.workflowName === 'string' &&
-          Array.isArray(parsed.nodes)
-        ) {
-          const loadedNodes = parsed.nodes as WorkflowNode[]
+      const parsed = JSON.parse(savedDraft)
 
-          setWorkflowName(parsed.workflowName)
-          setWorkflowNodes(loadedNodes)
+      if (
+        typeof parsed.workflowName === 'string' &&
+        Array.isArray(parsed.nodes)
+      ) {
+        const loadedNodes = parsed.nodes as WorkflowNode[]
 
-          setFlowNodes(
-            Array.isArray(parsed.flowNodes)
-              ? parsed.flowNodes
-              : createFlowNodes(loadedNodes),
-          )
+        setWorkflowName(parsed.workflowName)
+        setWorkflowNodes(loadedNodes)
+        setFlowNodes(
+          Array.isArray(parsed.flowNodes)
+            ? parsed.flowNodes
+            : createFlowNodes(loadedNodes),
+        )
+        setFlowEdges(
+          Array.isArray(parsed.flowEdges)
+            ? parsed.flowEdges
+            : createFlowEdges(loadedNodes),
+        )
 
-          setFlowEdges(
-            Array.isArray(parsed.flowEdges)
-              ? parsed.flowEdges
-              : createFlowEdges(loadedNodes),
-          )
-
-          if (loadedNodes.length > 0) {
-            setSelectedNode(loadedNodes[0].id)
-          }
+        if (loadedNodes.length > 0) {
+          setSelectedNode(loadedNodes[0].id)
         }
       }
     } catch {
@@ -229,8 +236,7 @@ function App() {
   }
 
   const addTask = () => {
-    const id =
-      Math.max(0, ...workflowNodes.map((node) => node.id)) + 1
+    const id = Math.max(0, ...workflowNodes.map((node) => node.id)) + 1
 
     const newTask: WorkflowNode = {
       id,
@@ -283,8 +289,8 @@ function App() {
       }
 
       const endpoint = workflowId
-        ? `http://localhost:5000/api/workflows/${workflowId}`
-        : 'http://localhost:5000/api/workflows'
+        ? `${API_URL}/workflows/${workflowId}`
+        : `${API_URL}/workflows`
 
       const response = await fetch(endpoint, {
         method: workflowId ? 'PUT' : 'POST',
@@ -335,7 +341,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/workflows/${workflowId}/run`,
+        `${API_URL}/workflows/${workflowId}/run`,
         {
           method: 'POST',
           headers: {
@@ -353,10 +359,14 @@ function App() {
       const execution = data.execution
 
       setNotice(
-        `${data.message}: ${execution.steps
-          .map((step: { name: string }) => step.name)
-          .join(' → ')}`,
+        execution?.steps
+          ? `${data.message}: ${execution.steps
+              .map((step: { name: string }) => step.name)
+              .join(' → ')}`
+          : data.message || 'Workflow execution started.',
       )
+
+      await loadExecutions()
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -365,6 +375,40 @@ function App() {
       )
     } finally {
       setIsRunning(false)
+    }
+  }
+
+  const loadExecutions = async () => {
+    if (!workflowId) {
+      setNotice('Save the workflow first to view its execution history.')
+      return
+    }
+
+    setIsLoadingExecutions(true)
+
+    try {
+      const response = await fetch(
+        `${API_URL}/workflows/${workflowId}/executions`,
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load execution history.')
+      }
+
+      setExecutions(data.executions ?? [])
+      setNotice(
+        `Loaded ${data.executions?.length ?? 0} execution record(s).`,
+      )
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : 'Could not load execution history.',
+      )
+    } finally {
+      setIsLoadingExecutions(false)
     }
   }
 
@@ -424,13 +468,18 @@ function App() {
               className={`nav-item ${activePage === label ? 'active' : ''}`}
               onClick={() => {
                 setActivePage(label)
-                setNotice(`${label} selected.`)
+                setNotice('')
+
+                if (label === 'Executions') {
+                  void loadExecutions()
+                }
               }}
             >
               <Icon size={19} />
               <span>{label}</span>
+
               {label === 'Executions' && (
-                <span className="nav-count">0</span>
+                <span className="nav-count">{executions.length}</span>
               )}
             </button>
           ))}
@@ -495,46 +544,6 @@ function App() {
         </header>
 
         <section className="page-content">
-          <div className="welcome-row">
-            <div>
-              <div className="eyebrow">
-                <span className="live-dot" />
-                WORKFLOW WORKSPACE
-              </div>
-              <h1>
-                {activePage === 'Workflow Editor'
-                  ? 'Workflow Editor'
-                  : activePage}
-              </h1>
-              <p>Design, manage and monitor your workflows.</p>
-            </div>
-
-            <div className="header-buttons">
-              <button
-                className="button button-secondary"
-                onClick={addTask}
-              >
-                <Plus size={17} />
-                Add Task
-              </button>
-              <button
-                className="button button-secondary"
-                onClick={saveWorkflow}
-              >
-                <Save size={17} />
-                Save
-              </button>
-              <button
-                className="button button-primary"
-                onClick={runWorkflow}
-                disabled={isRunning}
-              >
-                <Play size={16} />
-                {isRunning ? 'Running...' : 'Run Workflow'}
-              </button>
-            </div>
-          </div>
-
           {notice && (
             <div className="notice" role="status">
               {notice}
@@ -547,165 +556,328 @@ function App() {
             </div>
           )}
 
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-top">
-                <span>Total Nodes</span>
-                <div className="stat-icon"><Workflow size={19} /></div>
-              </div>
-              <strong>{workflowNodes.length}</strong>
-              <small>Steps in this workflow</small>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-top">
-                <span>Connections</span>
-                <div className="stat-icon"><GitBranch size={19} /></div>
-              </div>
-              <strong>{flowEdges.length}</strong>
-              <small>Workflow connections</small>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-top">
-                <span>Workflow Status</span>
-                <div className="stat-icon"><ShieldCheck size={19} /></div>
-              </div>
-              <strong>Draft</strong>
-              <small>Ready for editing</small>
-            </div>
-          </div>
-
-          <section className="editor-card">
-            <div className="editor-toolbar">
-              <div className="editor-title">
-                <div className="mini-workflow-icon">
-                  <Workflow size={19} />
-                </div>
+          {activePage === 'Executions' ? (
+            <section className="editor-card" style={{ padding: '24px' }}>
+              <div className="welcome-row">
                 <div>
-                  <input
-                    className="workflow-name"
-                    value={workflowName}
-                    onChange={(event) => setWorkflowName(event.target.value)}
-                    aria-label="Workflow name"
-                  />
-                  <div className="version-label">Workflow draft</div>
+                  <div className="eyebrow">
+                    <span className="live-dot" />
+                    EXECUTION HISTORY
+                  </div>
+
+                  <h1>Workflow Executions</h1>
+                  <p>View the execution records for your saved workflow.</p>
+                </div>
+
+                <button
+                  className="primary-button"
+                  onClick={() => void loadExecutions()}
+                  disabled={isLoadingExecutions}
+                >
+                  {isLoadingExecutions ? 'Loading...' : 'Refresh History'}
+                </button>
+              </div>
+
+              {!workflowId ? (
+                <div style={{ padding: '32px 0', textAlign: 'center' }}>
+                  <h3>Save your workflow first</h3>
+                  <p>
+                    Save the workflow from the editor to view its execution
+                    history.
+                  </p>
+                  <button
+                    className="button button-primary"
+                    onClick={() => setActivePage('Workflow Editor')}
+                  >
+                    Open Workflow Editor
+                  </button>
+                </div>
+              ) : executions.length === 0 ? (
+                <div style={{ padding: '32px 0', textAlign: 'center' }}>
+                  <h3>No executions found</h3>
+                  <p>Run a saved workflow to see its history here.</p>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', marginTop: '24px' }}>
+                  <table
+                    style={{ width: '100%', borderCollapse: 'collapse' }}
+                  >
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '12px' }}>
+                          Execution ID
+                        </th>
+                        <th style={{ textAlign: 'left', padding: '12px' }}>
+                          Status
+                        </th>
+                        <th style={{ textAlign: 'left', padding: '12px' }}>
+                          Started At
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {executions.map((execution) => (
+                        <tr key={execution._id}>
+                          <td style={{ padding: '12px' }}>
+                            {execution._id}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {execution.status}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {execution.startedAt
+                              ? new Date(
+                                  execution.startedAt,
+                                ).toLocaleString()
+                              : 'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          ) : activePage === 'Workflow Editor' ? (
+            <>
+              <div className="welcome-row">
+                <div>
+                  <div className="eyebrow">
+                    <span className="live-dot" />
+                    WORKFLOW WORKSPACE
+                  </div>
+                  <h1>Workflow Editor</h1>
+                  <p>Design, manage and monitor your workflows.</p>
+                </div>
+
+                <div className="header-buttons">
+                  <button
+                    className="button button-secondary"
+                    onClick={addTask}
+                  >
+                    <Plus size={17} />
+                    Add Task
+                  </button>
+
+                  <button
+                    className="button button-secondary"
+                    onClick={() => void saveWorkflow()}
+                  >
+                    <Save size={17} />
+                    Save
+                  </button>
+
+                  <button
+                    className="button button-primary"
+                    onClick={() => void runWorkflow()}
+                    disabled={isRunning}
+                  >
+                    <Play size={16} />
+                    {isRunning ? 'Running...' : 'Run Workflow'}
+                  </button>
                 </div>
               </div>
 
-              <div className="editor-toolbar-actions">
-                <span className="status-pill">● Draft</span>
-              </div>
-            </div>
-
-            <div className="editor-layout">
-              <div className="canvas-area">
-                <div className="canvas-meta">
-                  <span>WORKFLOW CANVAS</span>
-                  <span>{visibleFlowNodes.length} nodes</span>
-                </div>
-
-                <div className="canvas-grid">
-                  {visibleFlowNodes.length > 0 ? (
-                    <ReactFlow
-                      nodes={visibleFlowNodes}
-                      edges={visibleFlowEdges}
-                      onNodesChange={onNodesChange}
-                      onEdgesChange={onEdgesChange}
-                      onConnect={onConnect}
-                      onNodeClick={(_, node) =>
-                        setSelectedNode(Number(node.id))
-                      }
-                      fitView
-                      fitViewOptions={{ padding: 0.25 }}
-                    >
-                      <Background />
-                      <Controls />
-                      <MiniMap />
-                    </ReactFlow>
-                  ) : (
-                    <div className="empty-search">
-                      No nodes match your search.
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-top">
+                    <span>Total Nodes</span>
+                    <div className="stat-icon">
+                      <Workflow size={19} />
                     </div>
-                  )}
+                  </div>
+                  <strong>{workflowNodes.length}</strong>
+                  <small>Steps in this workflow</small>
                 </div>
 
-                <div className="canvas-footer">
-                  Drag nodes to reposition them. Connect node handles to
-                  create workflow paths.
+                <div className="stat-card">
+                  <div className="stat-top">
+                    <span>Connections</span>
+                    <div className="stat-icon">
+                      <GitBranch size={19} />
+                    </div>
+                  </div>
+                  <strong>{flowEdges.length}</strong>
+                  <small>Workflow connections</small>
+                </div>
+
+                <div className="stat-card">
+                  <div className="stat-top">
+                    <span>Workflow Status</span>
+                    <div className="stat-icon">
+                      <ShieldCheck size={19} />
+                    </div>
+                  </div>
+                  <strong>Draft</strong>
+                  <small>Ready for editing</small>
                 </div>
               </div>
 
-              <aside className="properties-panel">
-                <div className="panel-heading">
-                  <div>
-                    <strong>Node Properties</strong>
-                    <span>Edit the selected step</span>
+              <section className="editor-card">
+                <div className="editor-toolbar">
+                  <div className="editor-title">
+                    <div className="mini-workflow-icon">
+                      <Workflow size={19} />
+                    </div>
+                    <div>
+                      <input
+                        className="workflow-name"
+                        value={workflowName}
+                        onChange={(event) =>
+                          setWorkflowName(event.target.value)
+                        }
+                        aria-label="Workflow name"
+                      />
+                      <div className="version-label">Workflow draft</div>
+                    </div>
+                  </div>
+
+                  <div className="editor-toolbar-actions">
+                    <span className="status-pill">● Draft</span>
                   </div>
                 </div>
 
-                {currentNode ? (
-                  <>
-                    <div className="selected-node-badge">
-                      <div className="property-node-icon">
-                        <Workflow size={20} />
-                      </div>
+                <div className="editor-layout">
+                  <div className="canvas-area">
+                    <div className="canvas-meta">
+                      <span>WORKFLOW CANVAS</span>
+                      <span>{visibleFlowNodes.length} nodes</span>
+                    </div>
+
+                    <div className="canvas-grid">
+                      {visibleFlowNodes.length > 0 ? (
+                        <ReactFlow
+                          nodes={visibleFlowNodes}
+                          edges={visibleFlowEdges}
+                          onNodesChange={onNodesChange}
+                          onEdgesChange={onEdgesChange}
+                          onConnect={onConnect}
+                          onNodeClick={(_, node) =>
+                            setSelectedNode(Number(node.id))
+                          }
+                          fitView
+                          fitViewOptions={{ padding: 0.25 }}
+                        >
+                          <Background />
+                          <Controls />
+                          <MiniMap />
+                        </ReactFlow>
+                      ) : (
+                        <div className="empty-search">
+                          No nodes match your search.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="canvas-footer">
+                      Drag nodes to reposition them. Connect node handles to
+                      create workflow paths.
+                    </div>
+                  </div>
+
+                  <aside className="properties-panel">
+                    <div className="panel-heading">
                       <div>
-                        <strong>{currentNode.type} Node</strong>
-                        <span>ID: {currentNode.id}</span>
+                        <strong>Node Properties</strong>
+                        <span>Edit the selected step</span>
                       </div>
                     </div>
 
-                    <label className="field-label" htmlFor="node-title">
-                      Node name
-                    </label>
-                    <input
-                      id="node-title"
-                      className="property-input"
-                      value={currentNode.title}
-                      onChange={(event) =>
-                        updateNode('title', event.target.value)
-                      }
-                    />
+                    {currentNode ? (
+                      <>
+                        <div className="selected-node-badge">
+                          <div className="property-node-icon">
+                            <Workflow size={20} />
+                          </div>
+                          <div>
+                            <strong>{currentNode.type} Node</strong>
+                            <span>ID: {currentNode.id}</span>
+                          </div>
+                        </div>
 
-                    <label
-                      className="field-label"
-                      htmlFor="node-description"
-                    >
-                      Description
-                    </label>
-                    <textarea
-                      id="node-description"
-                      className="property-textarea"
-                      value={currentNode.description}
-                      onChange={(event) =>
-                        updateNode('description', event.target.value)
-                      }
-                      rows={4}
-                    />
+                        <label className="field-label" htmlFor="node-title">
+                          Node name
+                        </label>
+                        <input
+                          id="node-title"
+                          className="property-input"
+                          value={currentNode.title}
+                          onChange={(event) =>
+                            updateNode('title', event.target.value)
+                          }
+                        />
 
-                    <div className="property-divider" />
+                        <label
+                          className="field-label"
+                          htmlFor="node-description"
+                        >
+                          Description
+                        </label>
+                        <textarea
+                          id="node-description"
+                          className="property-textarea"
+                          value={currentNode.description}
+                          onChange={(event) =>
+                            updateNode('description', event.target.value)
+                          }
+                          rows={4}
+                        />
 
-                    <div className="property-info">
-                      <span>Node type</span>
-                      <strong>{currentNode.type}</strong>
-                    </div>
-                    <div className="property-info">
-                      <span>Node status</span>
-                      <strong className="status-pill">Draft</strong>
-                    </div>
+                        <div className="property-divider" />
 
-                    <p className="property-hint">
-                      Changes are reflected in the canvas. Click Save to
-                      store your workflow.
-                    </p>
-                  </>
-                ) : (
-                  <p>Select a node on the canvas to edit its properties.</p>
-                )}
-              </aside>
-            </div>
-          </section>
+                        <div className="property-info">
+                          <span>Node type</span>
+                          <strong>{currentNode.type}</strong>
+                        </div>
+
+                        <div className="property-info">
+                          <span>Node status</span>
+                          <strong className="status-pill">Draft</strong>
+                        </div>
+
+                        <p className="property-hint">
+                          Changes are reflected in the canvas. Click Save to
+                          store your workflow.
+                        </p>
+                      </>
+                    ) : (
+                      <p>
+                        Select a node on the canvas to edit its properties.
+                      </p>
+                    )}
+                  </aside>
+                </div>
+              </section>
+            </>
+          ) : (
+            <section className="editor-card" style={{ padding: '24px' }}>
+              <div className="eyebrow">
+                <span className="live-dot" />
+                WORKSPACE
+              </div>
+              <h1>{activePage}</h1>
+
+              {activePage === 'Dashboard' ? (
+                <p>
+                  Welcome to FlowPilot. Open Workflow Editor to design your
+                  workflow or Executions to review its history.
+                </p>
+              ) : (
+                <p>
+                  Your safety tools and workflow safeguards will be available
+                  here.
+                </p>
+              )}
+
+              <button
+                className="button button-primary"
+                onClick={() => setActivePage('Workflow Editor')}
+              >
+                <Workflow size={17} />
+                Open Workflow Editor
+              </button>
+            </section>
+          )}
 
           <footer className="page-footer">
             <span>FlowPilot · Workflow Engine</span>
