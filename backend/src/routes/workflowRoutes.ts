@@ -46,7 +46,9 @@ router.post("/", async (req, res) => {
 // Get all workflows
 router.get("/", async (_req, res) => {
   try {
-    const workflows = await Workflow.find();
+    const workflows = await Workflow.find().sort({
+      updatedAt: -1,
+    });
 
     res.json(workflows);
   } catch {
@@ -56,9 +58,31 @@ router.get("/", async (_req, res) => {
   }
 });
 
+// Get all workflow executions
+router.get("/executions", async (_req, res) => {
+  try {
+    const executions = await Execution.find().sort({
+      createdAt: -1,
+    });
+
+    res.json({
+      totalExecutions: executions.length,
+      executions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch execution history",
+      error:
+        error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
 // Run a workflow and save execution history
 router.post("/:id/run", async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) {
+  const workflowId = req.params.id;
+
+  if (!mongoose.isValidObjectId(workflowId)) {
     res.status(400).json({
       message: "Invalid workflow ID",
     });
@@ -66,7 +90,7 @@ router.post("/:id/run", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findById(req.params.id);
+    const workflow = await Workflow.findById(workflowId);
 
     if (!workflow) {
       res.status(404).json({
@@ -133,7 +157,9 @@ router.post("/:id/run", async (req, res) => {
 
 // Get execution history for one workflow
 router.get("/:id/executions", async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) {
+  const workflowId = req.params.id;
+
+  if (!mongoose.isValidObjectId(workflowId)) {
     res.status(400).json({
       message: "Invalid workflow ID",
     });
@@ -141,7 +167,7 @@ router.get("/:id/executions", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findById(req.params.id);
+    const workflow = await Workflow.findById(workflowId);
 
     if (!workflow) {
       res.status(404).json({
@@ -171,7 +197,9 @@ router.get("/:id/executions", async (req, res) => {
 
 // Get one execution by ID
 router.get("/executions/:executionId", async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.executionId)) {
+  const executionId = req.params.executionId;
+
+  if (!mongoose.isValidObjectId(executionId)) {
     res.status(400).json({
       message: "Invalid execution ID",
     });
@@ -179,9 +207,7 @@ router.get("/executions/:executionId", async (req, res) => {
   }
 
   try {
-    const execution = await Execution.findById(
-      req.params.executionId
-    );
+    const execution = await Execution.findById(executionId);
 
     if (!execution) {
       res.status(404).json({
@@ -202,7 +228,9 @@ router.get("/executions/:executionId", async (req, res) => {
 
 // Get one workflow by ID
 router.get("/:id", async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) {
+  const workflowId = req.params.id;
+
+  if (!mongoose.isValidObjectId(workflowId)) {
     res.status(400).json({
       message: "Invalid workflow ID",
     });
@@ -210,7 +238,7 @@ router.get("/:id", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findById(req.params.id);
+    const workflow = await Workflow.findById(workflowId);
 
     if (!workflow) {
       res.status(404).json({
@@ -229,7 +257,9 @@ router.get("/:id", async (req, res) => {
 
 // Update a workflow by ID
 router.put("/:id", async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) {
+  const workflowId = req.params.id;
+
+  if (!mongoose.isValidObjectId(workflowId)) {
     res.status(400).json({
       message: "Invalid workflow ID",
     });
@@ -238,7 +268,7 @@ router.put("/:id", async (req, res) => {
 
   try {
     const workflow = await Workflow.findByIdAndUpdate(
-      req.params.id,
+      workflowId,
       req.body,
       {
         new: true,
@@ -265,7 +295,9 @@ router.put("/:id", async (req, res) => {
 
 // Delete a workflow by ID
 router.delete("/:id", async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) {
+  const workflowId = req.params.id;
+
+  if (!mongoose.isValidObjectId(workflowId)) {
     res.status(400).json({
       message: "Invalid workflow ID",
     });
@@ -273,7 +305,7 @@ router.delete("/:id", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findByIdAndDelete(req.params.id);
+    const workflow = await Workflow.findByIdAndDelete(workflowId);
 
     if (!workflow) {
       res.status(404).json({
