@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from 'react'
 import {
   ReactFlow,
@@ -49,26 +48,13 @@ type FlowNodeData = {
   label: string
 }
 
-const initialWorkflowNodes: WorkflowNode[] = [
-  {
-    id: 1,
-    type: 'Start',
-    title: 'Start Workflow',
-    description: 'Workflow begins here',
-  },
-  {
-    id: 2,
-    type: 'Task',
-    title: 'Process Request',
-    description: 'Validate and process incoming data',
-  },
-  {
-    id: 3,
-    type: 'End',
-    title: 'Finish Workflow',
-    description: 'Workflow completes successfully',
-  },
-]
+type SavedDraft = {
+  workflowName?: string
+  nodes?: WorkflowNode[]
+  flowNodes?: Node<FlowNodeData>[]
+  flowEdges?: Edge[]
+  backendWorkflowId?: string
+}
 
 function createFlowNodes(workflowNodes: WorkflowNode[]): Node<FlowNodeData>[] {
   return workflowNodes.map((node, index) => ({
@@ -118,12 +104,75 @@ function App() {
   const [workflowName, setWorkflowName] = useState('My First Workflow')
   const [isRunning, setIsRunning] = useState(false)
   const [workflowNodes, setWorkflowNodes] =
-    useState<WorkflowNode[]>(initialWorkflowNodes)
-  const [flowNodes, setFlowNodes] = useState<Node<FlowNodeData>[]>(
-    () => createFlowNodes(initialWorkflowNodes),
+    useState<WorkflowNode[]>([
+      {
+        id: 1,
+        type: 'Start',
+        title: 'Start Workflow',
+        description: 'Workflow begins here',
+      },
+      {
+        id: 2,
+        type: 'Task',
+        title: 'Process Request',
+        description: 'Validate and process incoming data',
+      },
+      {
+        id: 3,
+        type: 'End',
+        title: 'Finish Workflow',
+        description: 'Workflow completes successfully',
+      },
+    ])
+
+  const [flowNodes, setFlowNodes] = useState<Node<FlowNodeData>[]>(() =>
+    createFlowNodes([
+      {
+        id: 1,
+        type: 'Start',
+        title: 'Start Workflow',
+        description: 'Workflow begins here',
+      },
+      {
+        id: 2,
+        type: 'Task',
+        title: 'Process Request',
+        description: 'Validate and process incoming data',
+      },
+      {
+        id: 3,
+        type: 'End',
+        title: 'Finish Workflow',
+        description: 'Workflow completes successfully',
+      },
+    ]),
   )
-  const [flowEdges, setFlowEdges] = useState<Edge[]>(
-    () => createFlowEdges(initialWorkflowNodes),
+
+  const [flowEdges, setFlowEdges] = useState<Edge[]>(() =>
+    createFlowEdges([
+      {
+        id: 1,
+        type: 'Start',
+        title: 'Start Workflow',
+        description: 'Workflow begins here',
+      },
+      {
+        id: 2,
+        type: 'Task',
+        title: 'Process Request',
+        description: 'Validate and process incoming data',
+      },
+      {
+        id: 3,
+        type: 'End',
+        title: 'Finish Workflow',
+        description: 'Workflow completes successfully',
+      },
+    ]),
+  )
+
+  const [backendWorkflowId, setBackendWorkflowId] = useState<string | null>(
+    null,
   )
 
   const currentNode = workflowNodes.find(
@@ -134,32 +183,37 @@ function App() {
     try {
       const savedDraft = localStorage.getItem('workflow-editor-draft')
 
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft)
+      if (!savedDraft) return
 
-        if (
-          typeof parsed.workflowName === 'string' &&
-          Array.isArray(parsed.nodes)
-        ) {
-          const loadedNodes = parsed.nodes as WorkflowNode[]
-          setWorkflowName(parsed.workflowName)
-          setWorkflowNodes(loadedNodes)
+      const parsed = JSON.parse(savedDraft) as SavedDraft
 
-          if (Array.isArray(parsed.flowNodes)) {
-            setFlowNodes(parsed.flowNodes)
-          } else {
-            setFlowNodes(createFlowNodes(loadedNodes))
-          }
+      if (
+        typeof parsed.workflowName === 'string' &&
+        Array.isArray(parsed.nodes)
+      ) {
+        const loadedNodes = parsed.nodes
 
-          if (Array.isArray(parsed.flowEdges)) {
-            setFlowEdges(parsed.flowEdges)
-          } else {
-            setFlowEdges(createFlowEdges(loadedNodes))
-          }
+        setWorkflowName(parsed.workflowName)
+        setWorkflowNodes(loadedNodes)
 
-          if (loadedNodes.length > 0) {
-            setSelectedNode(loadedNodes[0].id)
-          }
+        if (Array.isArray(parsed.flowNodes)) {
+          setFlowNodes(parsed.flowNodes)
+        } else {
+          setFlowNodes(createFlowNodes(loadedNodes))
+        }
+
+        if (Array.isArray(parsed.flowEdges)) {
+          setFlowEdges(parsed.flowEdges)
+        } else {
+          setFlowEdges(createFlowEdges(loadedNodes))
+        }
+
+        if (typeof parsed.backendWorkflowId === 'string') {
+          setBackendWorkflowId(parsed.backendWorkflowId)
+        }
+
+        if (loadedNodes.length > 0) {
+          setSelectedNode(loadedNodes[0].id)
         }
       }
     } catch {
@@ -273,37 +327,125 @@ function App() {
     setNotice('New task added. You can drag it on the canvas.')
   }
 
-  const saveWorkflow = () => {
+  const saveWorkflow = async (): Promise<string | null> => {
+    const draft = {
+      workflowName,
+      nodes: workflowNodes,
+      flowNodes,
+      flowEdges,
+      ...(backendWorkflowId ? { backendWorkflowId } : {}),
+    }
+
     try {
       localStorage.setItem(
         'workflow-editor-draft',
+        JSON.stringify(draft),
+      )
+
+      const response = await fetch(
+        backendWorkflowId
+          ? `http://localhost:5000/api/workflows/${backendWorkflowId}`
+          : 'http://localhost:5000/api/workflows',
+        {
+          method: backendWorkflowId ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: workflowName,
+            nodes: flowNodes,
+            edges: flowEdges,
+            status: 'draft',
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        throw new Error(`Backend save failed (${response.status})`)
+      }
+
+      const result = await response.json()
+
+      const savedId =
+        result.workflow?._id ??
+        result._id ??
+        result.workflow?.id ??
+        result.id ??
+        backendWorkflowId
+
+      if (!savedId) {
+        throw new Error('Backend did not return a workflow ID.')
+      }
+
+      setBackendWorkflowId(savedId)
+
+      localStorage.setItem(
+        'workflow-editor-draft',
         JSON.stringify({
-          workflowName,
-          nodes: workflowNodes,
-          flowNodes,
-          flowEdges,
+          ...draft,
+          backendWorkflowId: savedId,
         }),
       )
-      setNotice('Workflow draft saved in this browser.')
-    } catch {
-      setNotice('Could not save the draft in this browser.')
+
+      setNotice('Workflow saved successfully to the backend.')
+      return savedId
+    } catch (error) {
+      console.error('Save workflow error:', error)
+      setNotice(
+        'Backend save failed. Check that the backend is running.',
+      )
+      return null
     }
   }
 
-  const runWorkflow = () => {
+  const runWorkflow = async () => {
     if (workflowNodes.length < 2) {
       setNotice('Add workflow steps before running.')
       return
     }
 
     setIsRunning(true)
-    setNotice(
-      `Workflow execution completed: ${workflowNodes
-        .map((node) => node.title)
-        .join(' → ')}`,
-    )
 
-    window.setTimeout(() => setIsRunning(false), 1800)
+    try {
+      const savedWorkflowId = await saveWorkflow()
+
+      if (!savedWorkflowId) {
+        setNotice('Workflow could not be saved. Please try again.')
+        return
+      }
+
+      const response = await fetch(
+        `http://localhost:5000/api/workflows/${savedWorkflowId}/run`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      )
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          result.message || 'Workflow execution failed.',
+        )
+      }
+
+      setNotice(
+        result.message ||
+          `Workflow execution started: ${workflowNodes
+            .map((node) => node.title)
+            .join(' → ')}`,
+      )
+    } catch (error) {
+      console.error('Run workflow error:', error)
+      setNotice(
+        'Could not run workflow. Check the backend and try again.',
+      )
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   const navItems = [
