@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import Workflow from "../models/Workflow.js";
 import Execution from "../models/Execution.js";
+import { runSaga } from "../services/sagaEngine.js";
 
 const router = express.Router();
 
@@ -78,79 +79,94 @@ router.get("/executions", async (_req, res) => {
   }
 });
 
-// Run a workflow and save execution history
+// Run a workflow through the Saga Engine and save execution history
 router.post("/:id/run", async (req, res) => {
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
-    res.status(400).json({
-      message: "Invalid workflow ID",
-    });
+    res.status(400).json({ message: "Invalid workflow ID" });
     return;
   }
+let execution: InstanceType<typeof Execution> | null = null;
 
   try {
     const workflow = await Workflow.findById(workflowId);
 
     if (!workflow) {
-      res.status(404).json({
-        message: "Workflow not found",
-      });
+      res.status(404).json({ message: "Workflow not found" });
       return;
     }
 
     const nodes = Array.isArray(workflow.nodes)
-      ? workflow.nodes
-      : [];
+  ? (workflow.nodes as import("../services/sagaEngine.js").WorkflowNode[])
+  : [];
 
+const edges = Array.isArray(workflow.edges)
+  ? (workflow.edges as import("../services/sagaEngine.js").WorkflowEdge[])
+  : [];
     if (nodes.length < 2) {
       res.status(400).json({
-        message: "A workflow must contain at least two nodes to run",
+        message: "A workflow must contain at least two nodes to run.",
       });
       return;
     }
 
-    const startedAt = new Date();
-
-    const execution = await Execution.create({
+    execution = await Execution.create({
       workflowId: workflow._id,
       workflowName: workflow.name,
       status: "running",
-      startedAt,
-      steps: nodes.map((node: any, index: number) => ({
-        nodeId: String(node.id ?? `node-${index + 1}`),
-        name: String(
-          node.title ??
-            node.name ??
-            node.data?.label ??
-            `Step ${index + 1}`
-        ),
-        status: "pending",
-      })),
+      startedAt: new Date(),
+      steps: [],
     });
 
-    const stepStartTime = new Date();
-
-    execution.steps.forEach((step) => {
-      step.status = "completed";
-      step.startedAt = stepStartTime;
-      step.completedAt = new Date();
+    const result = await runSaga(nodes, edges, {
+      maxRetries: 2,
+      retryDelayMs: 250,
     });
 
-    execution.status = "completed";
-    execution.completedAt = new Date();
+    execution.steps = result.steps.map((step) => ({
+      nodeId: step.nodeId,
+      name: step.name,
+      status: step.status,
+      startedAt: step.startedAt,
+      completedAt: step.completedAt,
+      output: step.output,
+      error: step.error,
+    }));
+
+    execution.status = result.status;
+    execution.completedAt = result.completedAt;
+
+    if (result.error) {
+      execution.error = result.error;
+    }
 
     await execution.save();
 
     res.status(200).json({
-      message: "Workflow execution completed and saved",
+      message:
+        result.status === "completed"
+          ? "Workflow execution completed successfully."
+          : "Workflow execution failed.",
       execution,
     });
   } catch (error) {
+    if (execution) {
+      execution.status = "failed";
+      execution.completedAt = new Date();
+      execution.error =
+        error instanceof Error ? error.message : "Unknown execution error.";
+
+      try {
+        await execution.save();
+      } catch (saveError) {
+        console.error("Failed to save workflow execution failure:", saveError);
+      }
+    }
+
     res.status(500).json({
-      message: "Failed to run workflow",
-      error:
-        error instanceof Error ? error.message : "Unknown error",
+      message: "Failed to run workflow.",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
