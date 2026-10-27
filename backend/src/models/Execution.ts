@@ -12,6 +12,7 @@ export interface IExecutionStep {
 }
 
 export interface IExecution extends Document {
+  tenantId: string;
   workflowId: mongoose.Types.ObjectId;
   workflowName: string;
   status: "pending" | "running" | "completed" | "failed";
@@ -42,6 +43,12 @@ const ExecutionStepSchema = new Schema<IExecutionStep>(
 
 const ExecutionSchema = new Schema<IExecution>(
   {
+      tenantId: {
+      type: String,
+      required: true,
+      default: () => process.env.WORKFLOW_TENANT_ID || "local-tenant",
+      index: true,
+    },
     workflowId: {
       type: Schema.Types.ObjectId,
       ref: "Workflow",
