@@ -2,6 +2,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IWorkflow extends Document {
+  tenantId: string;
   name: string;
   description: string;
   nodes: unknown[];
@@ -13,6 +14,12 @@ export interface IWorkflow extends Document {
 
 const WorkflowSchema = new Schema<IWorkflow>(
   {
+      tenantId: {
+      type: String,
+      required: true,
+      default: () => process.env.WORKFLOW_TENANT_ID || "local-tenant",
+      index: true,
+    },
     name: {
       type: String,
       required: true,
