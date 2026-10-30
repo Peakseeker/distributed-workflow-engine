@@ -7,6 +7,20 @@ import { runSaga } from "../services/sagaEngine.js";
 
 const router = express.Router();
 
+// Read tenant ID after environment variables have been loaded.
+function getTenantId(res: express.Response): string | null {
+  const tenantId = process.env.WORKFLOW_TENANT_ID;
+
+  if (!tenantId) {
+    res.status(503).json({
+      message: "Tenant configuration is missing.",
+    });
+    return null;
+  }
+
+  return tenantId;
+}
+
 // Test workflow routes
 router.get("/test", (_req, res) => {
   res.json({
@@ -14,10 +28,13 @@ router.get("/test", (_req, res) => {
   });
 });
 
-// Get total workflow count
+// Get total workflow count for this tenant
 router.get("/stats/count", async (_req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   try {
-    const count = await Workflow.countDocuments();
+    const count = await Workflow.countDocuments({ tenantId });
 
     res.json({
       totalWorkflows: count,
@@ -31,23 +48,31 @@ router.get("/stats/count", async (_req, res) => {
 
 // Create a workflow
 router.post("/", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   try {
-    const workflow = await Workflow.create(req.body);
+    const workflow = await Workflow.create({
+      ...req.body,
+      tenantId,
+    });
 
     res.status(201).json(workflow);
   } catch (error) {
     res.status(400).json({
       message: "Failed to create workflow",
-      error:
-        error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
 
-// Get all workflows
+// Get all workflows for this tenant
 router.get("/", async (_req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   try {
-    const workflows = await Workflow.find().sort({
+    const workflows = await Workflow.find({ tenantId }).sort({
       updatedAt: -1,
     });
 
@@ -59,10 +84,13 @@ router.get("/", async (_req, res) => {
   }
 });
 
-// Get all workflow executions
+// Get all executions for this tenant
 router.get("/executions", async (_req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   try {
-    const executions = await Execution.find().sort({
+    const executions = await Execution.find({ tenantId }).sort({
       createdAt: -1,
     });
 
@@ -73,24 +101,30 @@ router.get("/executions", async (_req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch execution history",
-      error:
-        error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
 
-// Run a workflow through the Saga Engine and save execution history
+// Run a workflow through the Saga Engine
 router.post("/:id/run", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
     res.status(400).json({ message: "Invalid workflow ID" });
     return;
   }
-let execution: InstanceType<typeof Execution> | null = null;
+
+  let execution: InstanceType<typeof Execution> | null = null;
 
   try {
-    const workflow = await Workflow.findById(workflowId);
+    const workflow = await Workflow.findOne({
+      _id: workflowId,
+      tenantId,
+    });
 
     if (!workflow) {
       res.status(404).json({ message: "Workflow not found" });
@@ -98,12 +132,13 @@ let execution: InstanceType<typeof Execution> | null = null;
     }
 
     const nodes = Array.isArray(workflow.nodes)
-  ? (workflow.nodes as import("../services/sagaEngine.js").WorkflowNode[])
-  : [];
+      ? (workflow.nodes as import("../services/sagaEngine.js").WorkflowNode[])
+      : [];
 
-const edges = Array.isArray(workflow.edges)
-  ? (workflow.edges as import("../services/sagaEngine.js").WorkflowEdge[])
-  : [];
+    const edges = Array.isArray(workflow.edges)
+      ? (workflow.edges as import("../services/sagaEngine.js").WorkflowEdge[])
+      : [];
+
     if (nodes.length < 2) {
       res.status(400).json({
         message: "A workflow must contain at least two nodes to run.",
@@ -112,6 +147,7 @@ const edges = Array.isArray(workflow.edges)
     }
 
     execution = await Execution.create({
+      tenantId,
       workflowId: workflow._id,
       workflowName: workflow.name,
       status: "running",
@@ -155,12 +191,17 @@ const edges = Array.isArray(workflow.edges)
       execution.status = "failed";
       execution.completedAt = new Date();
       execution.error =
-        error instanceof Error ? error.message : "Unknown execution error.";
+        error instanceof Error
+          ? error.message
+          : "Unknown execution error.";
 
       try {
         await execution.save();
       } catch (saveError) {
-        console.error("Failed to save workflow execution failure:", saveError);
+        console.error(
+          "Failed to save workflow execution failure:",
+          saveError,
+        );
       }
     }
 
@@ -173,6 +214,9 @@ const edges = Array.isArray(workflow.edges)
 
 // Get execution history for one workflow
 router.get("/:id/executions", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
@@ -183,7 +227,10 @@ router.get("/:id/executions", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findById(workflowId);
+    const workflow = await Workflow.findOne({
+      _id: workflowId,
+      tenantId,
+    });
 
     if (!workflow) {
       res.status(404).json({
@@ -194,6 +241,7 @@ router.get("/:id/executions", async (req, res) => {
 
     const executions = await Execution.find({
       workflowId: workflow._id,
+      tenantId,
     }).sort({ createdAt: -1 });
 
     res.json({
@@ -205,14 +253,16 @@ router.get("/:id/executions", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch execution history",
-      error:
-        error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
 
 // Get one execution by ID
 router.get("/executions/:executionId", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   const executionId = req.params.executionId;
 
   if (!mongoose.isValidObjectId(executionId)) {
@@ -223,7 +273,10 @@ router.get("/executions/:executionId", async (req, res) => {
   }
 
   try {
-    const execution = await Execution.findById(executionId);
+    const execution = await Execution.findOne({
+      _id: executionId,
+      tenantId,
+    });
 
     if (!execution) {
       res.status(404).json({
@@ -236,14 +289,16 @@ router.get("/executions/:executionId", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch execution",
-      error:
-        error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
 
 // Get one workflow by ID
 router.get("/:id", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
@@ -254,7 +309,10 @@ router.get("/:id", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findById(workflowId);
+    const workflow = await Workflow.findOne({
+      _id: workflowId,
+      tenantId,
+    });
 
     if (!workflow) {
       res.status(404).json({
@@ -273,6 +331,9 @@ router.get("/:id", async (req, res) => {
 
 // Update a workflow by ID
 router.put("/:id", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
@@ -283,13 +344,22 @@ router.put("/:id", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findByIdAndUpdate(
-      workflowId,
-      req.body,
+    const updateData = { ...req.body };
+    delete updateData.tenantId;
+    delete updateData._id;
+
+    const workflow = await Workflow.findOneAndUpdate(
+      {
+        _id: workflowId,
+        tenantId,
+      },
+      {
+        $set: updateData,
+      },
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     if (!workflow) {
@@ -303,14 +373,16 @@ router.put("/:id", async (req, res) => {
   } catch (error) {
     res.status(400).json({
       message: "Failed to update workflow",
-      error:
-        error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 });
 
 // Delete a workflow by ID
 router.delete("/:id", async (req, res) => {
+  const tenantId = getTenantId(res);
+  if (!tenantId) return;
+
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
@@ -321,7 +393,10 @@ router.delete("/:id", async (req, res) => {
   }
 
   try {
-    const workflow = await Workflow.findByIdAndDelete(workflowId);
+    const workflow = await Workflow.findOneAndDelete({
+      _id: workflowId,
+      tenantId,
+    });
 
     if (!workflow) {
       res.status(404).json({
