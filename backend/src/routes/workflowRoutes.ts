@@ -4,10 +4,11 @@ import mongoose from "mongoose";
 import Workflow from "../models/Workflow.js";
 import Execution from "../models/Execution.js";
 import { runSaga } from "../services/sagaEngine.js";
+import { tenantAuth } from "../middleware/tenantAuth.js";
 
 const router = express.Router();
 
-// Read tenant ID after environment variables have been loaded.
+// Read tenant ID from the authenticated request.
 function getTenantId(res: express.Response): string | null {
   const tenantId = process.env.WORKFLOW_TENANT_ID;
 
@@ -21,14 +22,17 @@ function getTenantId(res: express.Response): string | null {
   return tenantId;
 }
 
-// Test workflow routes
+// Public test route for checking workflow API connectivity.
 router.get("/test", (_req, res) => {
   res.json({
     message: "Workflow routes are working!",
   });
 });
 
-// Get total workflow count for this tenant
+// Protect all remaining workflow routes.
+router.use(tenantAuth);
+
+// Get total workflow count for this tenant.
 router.get("/stats/count", async (_req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -46,7 +50,7 @@ router.get("/stats/count", async (_req, res) => {
   }
 });
 
-// Create a workflow
+// Create a workflow.
 router.post("/", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -66,7 +70,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Get all workflows for this tenant
+// Get all workflows for this tenant.
 router.get("/", async (_req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -84,7 +88,7 @@ router.get("/", async (_req, res) => {
   }
 });
 
-// Get all executions for this tenant
+// Get all executions for this tenant.
 router.get("/executions", async (_req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -106,7 +110,7 @@ router.get("/executions", async (_req, res) => {
   }
 });
 
-// Run a workflow through the Saga Engine
+// Run a workflow through the Saga Engine.
 router.post("/:id/run", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -212,7 +216,7 @@ router.post("/:id/run", async (req, res) => {
   }
 });
 
-// Get execution history for one workflow
+// Get execution history for one workflow.
 router.get("/:id/executions", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -258,7 +262,7 @@ router.get("/:id/executions", async (req, res) => {
   }
 });
 
-// Get one execution by ID
+// Get one execution by ID.
 router.get("/executions/:executionId", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -294,7 +298,7 @@ router.get("/executions/:executionId", async (req, res) => {
   }
 });
 
-// Get one workflow by ID
+// Get one workflow by ID.
 router.get("/:id", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -329,7 +333,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Update a workflow by ID
+// Update a workflow by ID.
 router.put("/:id", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
@@ -378,7 +382,7 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// Delete a workflow by ID
+// Delete a workflow by ID.
 router.delete("/:id", async (req, res) => {
   const tenantId = getTenantId(res);
   if (!tenantId) return;
