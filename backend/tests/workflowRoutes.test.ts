@@ -19,8 +19,13 @@ import {
   disconnectTestDatabase,
 } from "./setup";
 
+const testApiKey = "test-api-key";
+
 describe("Workflow API routes", () => {
   beforeAll(async () => {
+    process.env.WORKFLOW_API_KEY = testApiKey;
+    process.env.WORKFLOW_TENANT_ID = "test-tenant";
+
     await connectTestDatabase();
   });
 
@@ -78,6 +83,7 @@ describe("Workflow API routes", () => {
   it("should create a workflow", async () => {
     const response = await request(app)
       .post("/api/workflows")
+      .set("x-api-key", testApiKey)
       .send(validWorkflow);
 
     expect(response.status).toBe(201);
@@ -88,7 +94,9 @@ describe("Workflow API routes", () => {
   it("should get all workflows", async () => {
     await Workflow.create(validWorkflow);
 
-    const response = await request(app).get("/api/workflows");
+    const response = await request(app)
+      .get("/api/workflows")
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body)).toBe(true);
@@ -99,9 +107,9 @@ describe("Workflow API routes", () => {
   it("should get workflow count", async () => {
     await Workflow.create(validWorkflow);
 
-    const response = await request(app).get(
-      "/api/workflows/stats/count",
-    );
+    const response = await request(app)
+      .get("/api/workflows/stats/count")
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
     expect(response.body.totalWorkflows).toBe(1);
@@ -110,9 +118,9 @@ describe("Workflow API routes", () => {
   it("should get a workflow by ID", async () => {
     const workflow = await Workflow.create(validWorkflow);
 
-    const response = await request(app).get(
-      `/api/workflows/${workflow._id}`,
-    );
+    const response = await request(app)
+      .get(`/api/workflows/${workflow._id}`)
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
     expect(response.body._id).toBe(workflow._id.toString());
@@ -124,6 +132,7 @@ describe("Workflow API routes", () => {
 
     const response = await request(app)
       .put(`/api/workflows/${workflow._id}`)
+      .set("x-api-key", testApiKey)
       .send({
         name: "Updated Workflow",
       });
@@ -136,9 +145,9 @@ describe("Workflow API routes", () => {
   it("should delete a workflow", async () => {
     const workflow = await Workflow.create(validWorkflow);
 
-    const response = await request(app).delete(
-      `/api/workflows/${workflow._id}`,
-    );
+    const response = await request(app)
+      .delete(`/api/workflows/${workflow._id}`)
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe(
@@ -152,17 +161,17 @@ describe("Workflow API routes", () => {
   it("should return 404 for a workflow that does not exist", async () => {
     const missingId = new mongoose.Types.ObjectId().toString();
 
-    const response = await request(app).get(
-      `/api/workflows/${missingId}`,
-    );
+    const response = await request(app)
+      .get(`/api/workflows/${missingId}`)
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(404);
   });
 
   it("should return 400 for an invalid workflow ID", async () => {
-    const response = await request(app).get(
-      "/api/workflows/invalid-id",
-    );
+    const response = await request(app)
+      .get("/api/workflows/invalid-id")
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(400);
   });
@@ -170,9 +179,9 @@ describe("Workflow API routes", () => {
   it("should run a valid workflow successfully", async () => {
     const workflow = await Workflow.create(validWorkflow);
 
-    const response = await request(app).post(
-      `/api/workflows/${workflow._id}/run`,
-    );
+    const response = await request(app)
+      .post(`/api/workflows/${workflow._id}/run`)
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe(
@@ -184,9 +193,9 @@ describe("Workflow API routes", () => {
   });
 
   it("should return 400 when running a workflow with an invalid ID", async () => {
-    const response = await request(app).post(
-      "/api/workflows/invalid-id/run",
-    );
+    const response = await request(app)
+      .post("/api/workflows/invalid-id/run")
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(400);
   });
@@ -204,9 +213,9 @@ describe("Workflow API routes", () => {
       completedAt: new Date(),
     });
 
-    const response = await request(app).get(
-      `/api/workflows/${workflow._id}/executions`,
-    );
+    const response = await request(app)
+      .get(`/api/workflows/${workflow._id}/executions`)
+      .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
     expect(response.body.totalExecutions).toBe(1);
