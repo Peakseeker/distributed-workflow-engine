@@ -1,6 +1,6 @@
 export type WorkflowNode = {
   id: number | string;
-  type: "Start" | "Task" | "End";
+  type: string;
   title: string;
   description: string;
   data?: Record<string, unknown>;
@@ -36,12 +36,12 @@ type TaskContext = {
 };
 
 type TaskHandler = (
-  context: TaskContext,
+  context: TaskContext
 ) => Promise<unknown>;
 
 type CompensationHandler = (
   context: TaskContext,
-  output: unknown,
+  output: unknown
 ) => Promise<void>;
 
 export type SagaEngineOptions = {
@@ -51,38 +51,59 @@ export type SagaEngineOptions = {
   compensationHandler?: CompensationHandler;
 };
 
+// Normalize node types from frontend/database.
+function normalizeNodeType(type: string): "Start" | "Task" | "End" | null {
+  const normalized = type.trim().toLowerCase();
+
+  if (normalized === "start") return "Start";
+  if (normalized === "task") return "Task";
+  if (normalized === "end") return "End";
+
+  return null;
+}
+
 const getNodeName = (node: WorkflowNode): string =>
-  node.title?.trim() || `${node.type} ${node.id}`;
+  node.title?.trim() || `${normalizeNodeType(node.type) ?? node.type} ${node.id}`;
 
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function buildTaskOrder(
   nodes: WorkflowNode[],
-  edges: WorkflowEdge[],
+  edges: WorkflowEdge[]
 ): WorkflowNode[] {
   const nodeMap = new Map<string, WorkflowNode>();
 
-  for (const node of nodes) {
+  // Validate and normalize node types.
+  const normalizedNodes = nodes.map((node) => {
+    const normalizedType = normalizeNodeType(node.type);
+
+    if (!normalizedType) {
+      throw new Error(`Unsupported node type for node ${node.id}: ${node.type}`);
+    }
+
+    return {
+      ...node,
+      type: normalizedType,
+    };
+  });
+
+  for (const node of normalizedNodes) {
     const id = String(node.id);
 
     if (nodeMap.has(id)) {
       throw new Error(`Duplicate node ID: ${id}`);
     }
 
-    if (!["Start", "Task", "End"].includes(node.type)) {
-      throw new Error(`Unsupported node type for node ${id}`);
-    }
-
     nodeMap.set(id, node);
   }
 
-  const starts = nodes.filter((node) => node.type === "Start");
-  const ends = nodes.filter((node) => node.type === "End");
+  const starts = normalizedNodes.filter((node) => node.type === "Start");
+  const ends = normalizedNodes.filter((node) => node.type === "End");
 
   if (starts.length !== 1 || ends.length !== 1) {
     throw new Error(
-      "A workflow must contain exactly one Start node and one End node.",
+      "A workflow must contain exactly one Start node and one End node."
     );
   }
 
@@ -112,6 +133,7 @@ function buildTaskOrder(
 
   const ordered: WorkflowNode[] = [];
   const visited = new Set<string>();
+
   let current = String(starts[0].id);
 
   while (true) {
@@ -120,6 +142,7 @@ function buildTaskOrder(
     }
 
     visited.add(current);
+
     const node = nodeMap.get(current)!;
     ordered.push(node);
 
@@ -131,7 +154,7 @@ function buildTaskOrder(
 
     if (next.length !== 1) {
       throw new Error(
-        `Node "${getNodeName(node)}" must have exactly one outgoing connection.`,
+        `Node "${getNodeName(node)}" must have exactly one outgoing connection.`
       );
     }
 
@@ -139,21 +162,23 @@ function buildTaskOrder(
 
     if (incomingCount.get(nextId) !== 1) {
       throw new Error(
-        `Node "${getNodeName(nodeMap.get(nextId)!)}" must have exactly one incoming connection.`,
+        `Node "${getNodeName(nodeMap.get(nextId)!)}" must have exactly one incoming connection.`
       );
     }
 
     current = nextId;
   }
 
-  if (visited.size !== nodes.length) {
+  if (visited.size !== normalizedNodes.length) {
     throw new Error(
-      "Every workflow node must be connected in the Start-to-End path.",
+      "Every workflow node must be connected in the Start-to-End path."
     );
   }
 
-  if (ordered[0].type !== "Start" ||
-      ordered[ordered.length - 1].type !== "End") {
+  if (
+    ordered[0].type !== "Start" ||
+    ordered[ordered.length - 1].type !== "End"
+  ) {
     throw new Error("The workflow path must begin at Start and end at End.");
   }
 
@@ -161,18 +186,16 @@ function buildTaskOrder(
 }
 
 async function defaultTaskHandler(
-  context: TaskContext,
+  context: TaskContext
 ): Promise<unknown> {
-  const description = context.node.description.trim();
+  const description = context.node.description?.trim() ?? "";
 
   if (!description) {
     throw new Error(
-      `Task "${getNodeName(context.node)}" has no description.`,
+      `Task "${getNodeName(context.node)}" has no description.`
     );
   }
 
-  // This default handler validates the task configuration.
-  // Replace it with a real integration when task types are defined.
   return {
     message: "Task configuration validated.",
     task: getNodeName(context.node),
@@ -183,18 +206,20 @@ async function defaultTaskHandler(
 export async function runSaga(
   nodes: WorkflowNode[],
   edges: WorkflowEdge[],
-  options: SagaEngineOptions = {},
+  options: SagaEngineOptions = {}
 ): Promise<SagaExecutionResult> {
   const startedAt = new Date();
-  const orderedNodes = buildTaskOrder(nodes, edges);
+
   const maxRetries = Math.max(
     0,
-    Math.min(5, Math.floor(options.maxRetries ?? 2)),
+    Math.min(5, Math.floor(options.maxRetries ?? 2))
   );
+
   const retryDelayMs = Math.max(
     0,
-    Math.min(10_000, options.retryDelayMs ?? 250),
+    Math.min(10_000, options.retryDelayMs ?? 250)
   );
+
   const taskHandler = options.taskHandler ?? defaultTaskHandler;
   const compensationHandler = options.compensationHandler;
 
@@ -205,20 +230,29 @@ export async function runSaga(
   }> = [];
 
   try {
+    const orderedNodes = buildTaskOrder(nodes, edges);
+
     for (const node of orderedNodes) {
-      if (node.type !== "Task") {
+      const nodeType = normalizeNodeType(node.type);
+
+      // Start and End are control nodes, not executable tasks.
+      if (nodeType !== "Task") {
         steps.push({
           nodeId: String(node.id),
           name: getNodeName(node),
           status: "completed",
           startedAt: new Date(),
           completedAt: new Date(),
-          output: { message: `${node.type} node passed.` },
+          output: {
+            message: `${nodeType} node passed.`,
+          },
         });
+
         continue;
       }
 
       const stepStartedAt = new Date();
+
       let output: unknown;
       let lastError: unknown;
       let succeeded = false;
@@ -229,6 +263,7 @@ export async function runSaga(
             node,
             completedSteps: [...steps],
           });
+
           succeeded = true;
           break;
         } catch (error) {
@@ -256,6 +291,7 @@ export async function runSaga(
           error: message,
         });
 
+        // Run compensation in reverse order.
         if (compensationHandler) {
           for (const completed of [...completedTasks].reverse()) {
             try {
@@ -264,7 +300,7 @@ export async function runSaga(
                   node: completed.node,
                   completedSteps: [...steps],
                 },
-                completed.output,
+                completed.output
               );
             } catch (compensationError) {
               const compensationMessage =
@@ -303,7 +339,10 @@ export async function runSaga(
       };
 
       steps.push(result);
-      completedTasks.push({ node, output });
+      completedTasks.push({
+        node,
+        output,
+      });
     }
 
     return {
@@ -318,7 +357,10 @@ export async function runSaga(
       steps,
       startedAt,
       completedAt: new Date(),
-      error: error instanceof Error ? error.message : "Saga execution failed.",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Saga execution failed.",
     };
   }
 }

@@ -1,3 +1,4 @@
+
 import { describe, it, expect, vi } from "vitest";
 import { runSaga } from "../src/services/sagaEngine.js";
 import type {
@@ -134,7 +135,7 @@ describe("runSaga", () => {
     expect(compensated).toEqual(["task-2", "task-1"]);
   });
 
-  it("rejects a workflow with invalid incoming connections", async () => {
+  it("returns a failed result for a workflow with invalid incoming connections", async () => {
     const cycleNodes: WorkflowNode[] = [
       nodes[0],
       nodes[1],
@@ -154,9 +155,11 @@ describe("runSaga", () => {
       { source: "task-2", target: "end" },
     ];
 
-    await expect(
-      runSaga(cycleNodes, cycleEdges),
-    ).rejects.toThrow(
+    const result = await runSaga(cycleNodes, cycleEdges);
+
+    expect(result.status).toBe("failed");
+    expect(result.steps).toHaveLength(0);
+    expect(result.error).toContain(
       'Node "Create Order" must have exactly one incoming connection.',
     );
   });
