@@ -1,4 +1,3 @@
-
 import type { Request, Response, NextFunction } from "express";
 
 export interface TenantRequest extends Request {
@@ -11,24 +10,46 @@ export function tenantAuth(
   next: NextFunction
 ): void {
   const apiKey = req.header("x-api-key");
+  const tenantsConfig = process.env.WORKFLOW_TENANTS;
 
-  const configuredApiKey = process.env.WORKFLOW_API_KEY;
-  const configuredTenantId = process.env.WORKFLOW_TENANT_ID;
-
-  if (!configuredApiKey || !configuredTenantId) {
+  if (!tenantsConfig) {
     res.status(503).json({
       message: "Tenant authentication is not configured.",
     });
     return;
   }
 
-  if (!apiKey || apiKey !== configuredApiKey) {
+  let tenants: Record<string, string>;
+
+  try {
+    tenants = JSON.parse(tenantsConfig) as Record<string, string>;
+  } catch {
+    res.status(503).json({
+      message: "Tenant authentication configuration is invalid.",
+    });
+    return;
+  }
+
+  if (!apiKey) {
     res.status(401).json({
       message: "Invalid or missing API key.",
     });
     return;
   }
 
-  (req as TenantRequest).tenantId = configuredTenantId;
+  const tenantEntry = Object.entries(tenants).find(
+    ([, configuredApiKey]) => configuredApiKey === apiKey
+  );
+
+  if (!tenantEntry) {
+    res.status(401).json({
+      message: "Invalid or missing API key.",
+    });
+    return;
+  }
+
+  const [tenantId] = tenantEntry;
+
+  (req as TenantRequest).tenantId = tenantId;
   next();
 }

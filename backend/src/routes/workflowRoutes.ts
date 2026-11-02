@@ -1,20 +1,25 @@
-
 import express from "express";
 import mongoose from "mongoose";
 import Workflow from "../models/Workflow.js";
 import Execution from "../models/Execution.js";
 import { runSaga } from "../services/sagaEngine.js";
-import { tenantAuth } from "../middleware/tenantAuth.js";
+import {
+  tenantAuth,
+  type TenantRequest,
+} from "../middleware/tenantAuth.js";
 
 const router = express.Router();
 
 // Read tenant ID from the authenticated request.
-function getTenantId(res: express.Response): string | null {
-  const tenantId = process.env.WORKFLOW_TENANT_ID;
+function getTenantId(
+  req: express.Request,
+  res: express.Response
+): string | null {
+  const tenantId = (req as TenantRequest).tenantId;
 
   if (!tenantId) {
-    res.status(503).json({
-      message: "Tenant configuration is missing.",
+    res.status(401).json({
+      message: "Authenticated tenant was not found.",
     });
     return null;
   }
@@ -33,8 +38,8 @@ router.get("/test", (_req, res) => {
 router.use(tenantAuth);
 
 // Get total workflow count for this tenant.
-router.get("/stats/count", async (_req, res) => {
-  const tenantId = getTenantId(res);
+router.get("/stats/count", async (req, res) => {
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   try {
@@ -43,7 +48,9 @@ router.get("/stats/count", async (_req, res) => {
     res.json({
       totalWorkflows: count,
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to count workflows:", error);
+
     res.status(500).json({
       message: "Failed to count workflows",
     });
@@ -52,7 +59,7 @@ router.get("/stats/count", async (_req, res) => {
 
 // Create a workflow.
 router.post("/", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   try {
@@ -63,6 +70,8 @@ router.post("/", async (req, res) => {
 
     res.status(201).json(workflow);
   } catch (error) {
+    console.error("Failed to create workflow:", error);
+
     res.status(400).json({
       message: "Failed to create workflow",
       error: error instanceof Error ? error.message : "Unknown error",
@@ -71,8 +80,8 @@ router.post("/", async (req, res) => {
 });
 
 // Get all workflows for this tenant.
-router.get("/", async (_req, res) => {
-  const tenantId = getTenantId(res);
+router.get("/", async (req, res) => {
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   try {
@@ -81,7 +90,9 @@ router.get("/", async (_req, res) => {
     });
 
     res.json(workflows);
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch workflows:", error);
+
     res.status(500).json({
       message: "Failed to fetch workflows",
     });
@@ -89,8 +100,8 @@ router.get("/", async (_req, res) => {
 });
 
 // Get all executions for this tenant.
-router.get("/executions", async (_req, res) => {
-  const tenantId = getTenantId(res);
+router.get("/executions", async (req, res) => {
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   try {
@@ -103,6 +114,8 @@ router.get("/executions", async (_req, res) => {
       executions,
     });
   } catch (error) {
+    console.error("Failed to fetch execution history:", error);
+
     res.status(500).json({
       message: "Failed to fetch execution history",
       error: error instanceof Error ? error.message : "Unknown error",
@@ -112,29 +125,35 @@ router.get("/executions", async (_req, res) => {
 
 // Run a workflow through the Saga Engine.
 router.post("/:id/run", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   const workflowId = req.params.id;
 
   if (!mongoose.isValidObjectId(workflowId)) {
-    res.status(400).json({ message: "Invalid workflow ID" });
+    res.status(400).json({
+      message: "Invalid workflow ID",
+    });
     return;
   }
 
   let execution: InstanceType<typeof Execution> | null = null;
 
   try {
+    // Find workflow belonging to the authenticated tenant.
     const workflow = await Workflow.findOne({
       _id: workflowId,
       tenantId,
     });
 
     if (!workflow) {
-      res.status(404).json({ message: "Workflow not found" });
+      res.status(404).json({
+        message: "Workflow not found",
+      });
       return;
     }
 
+    // Read workflow nodes and edges.
     const nodes = Array.isArray(workflow.nodes)
       ? (workflow.nodes as import("../services/sagaEngine.js").WorkflowNode[])
       : [];
@@ -143,6 +162,7 @@ router.post("/:id/run", async (req, res) => {
       ? (workflow.edges as import("../services/sagaEngine.js").WorkflowEdge[])
       : [];
 
+    // Validate workflow before execution.
     if (nodes.length < 2) {
       res.status(400).json({
         message: "A workflow must contain at least two nodes to run.",
@@ -150,6 +170,7 @@ router.post("/:id/run", async (req, res) => {
       return;
     }
 
+    // Create execution record.
     execution = await Execution.create({
       tenantId,
       workflowId: workflow._id,
@@ -159,11 +180,13 @@ router.post("/:id/run", async (req, res) => {
       steps: [],
     });
 
+    // Execute workflow using Saga Engine.
     const result = await runSaga(nodes, edges, {
       maxRetries: 2,
       retryDelayMs: 250,
     });
 
+    // Store execution step results.
     execution.steps = result.steps.map((step) => ({
       nodeId: step.nodeId,
       name: step.name,
@@ -174,6 +197,7 @@ router.post("/:id/run", async (req, res) => {
       error: step.error,
     }));
 
+    // Store final execution status.
     execution.status = result.status;
     execution.completedAt = result.completedAt;
 
@@ -191,6 +215,10 @@ router.post("/:id/run", async (req, res) => {
       execution,
     });
   } catch (error) {
+    // Log the actual error to help identify test failures.
+    console.error("Workflow execution test error:", error);
+
+    // Save failed execution details if an execution was created.
     if (execution) {
       execution.status = "failed";
       execution.completedAt = new Date();
@@ -204,7 +232,7 @@ router.post("/:id/run", async (req, res) => {
       } catch (saveError) {
         console.error(
           "Failed to save workflow execution failure:",
-          saveError,
+          saveError
         );
       }
     }
@@ -218,7 +246,7 @@ router.post("/:id/run", async (req, res) => {
 
 // Get execution history for one workflow.
 router.get("/:id/executions", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   const workflowId = req.params.id;
@@ -246,7 +274,9 @@ router.get("/:id/executions", async (req, res) => {
     const executions = await Execution.find({
       workflowId: workflow._id,
       tenantId,
-    }).sort({ createdAt: -1 });
+    }).sort({
+      createdAt: -1,
+    });
 
     res.json({
       workflowId: workflow._id.toString(),
@@ -255,6 +285,8 @@ router.get("/:id/executions", async (req, res) => {
       executions,
     });
   } catch (error) {
+    console.error("Failed to fetch workflow execution history:", error);
+
     res.status(500).json({
       message: "Failed to fetch execution history",
       error: error instanceof Error ? error.message : "Unknown error",
@@ -264,7 +296,7 @@ router.get("/:id/executions", async (req, res) => {
 
 // Get one execution by ID.
 router.get("/executions/:executionId", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   const executionId = req.params.executionId;
@@ -291,6 +323,8 @@ router.get("/executions/:executionId", async (req, res) => {
 
     res.json(execution);
   } catch (error) {
+    console.error("Failed to fetch execution:", error);
+
     res.status(500).json({
       message: "Failed to fetch execution",
       error: error instanceof Error ? error.message : "Unknown error",
@@ -300,7 +334,7 @@ router.get("/executions/:executionId", async (req, res) => {
 
 // Get one workflow by ID.
 router.get("/:id", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   const workflowId = req.params.id;
@@ -326,7 +360,9 @@ router.get("/:id", async (req, res) => {
     }
 
     res.json(workflow);
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch workflow:", error);
+
     res.status(500).json({
       message: "Failed to fetch workflow",
     });
@@ -335,7 +371,7 @@ router.get("/:id", async (req, res) => {
 
 // Update a workflow by ID.
 router.put("/:id", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   const workflowId = req.params.id;
@@ -349,6 +385,8 @@ router.put("/:id", async (req, res) => {
 
   try {
     const updateData = { ...req.body };
+
+    // Prevent clients from changing tenant ownership.
     delete updateData.tenantId;
     delete updateData._id;
 
@@ -363,7 +401,7 @@ router.put("/:id", async (req, res) => {
       {
         new: true,
         runValidators: true,
-      },
+      }
     );
 
     if (!workflow) {
@@ -375,6 +413,8 @@ router.put("/:id", async (req, res) => {
 
     res.json(workflow);
   } catch (error) {
+    console.error("Failed to update workflow:", error);
+
     res.status(400).json({
       message: "Failed to update workflow",
       error: error instanceof Error ? error.message : "Unknown error",
@@ -384,7 +424,7 @@ router.put("/:id", async (req, res) => {
 
 // Delete a workflow by ID.
 router.delete("/:id", async (req, res) => {
-  const tenantId = getTenantId(res);
+  const tenantId = getTenantId(req, res);
   if (!tenantId) return;
 
   const workflowId = req.params.id;
@@ -412,7 +452,9 @@ router.delete("/:id", async (req, res) => {
     res.json({
       message: "Workflow deleted successfully",
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to delete workflow:", error);
+
     res.status(500).json({
       message: "Failed to delete workflow",
     });

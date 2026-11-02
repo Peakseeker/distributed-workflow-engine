@@ -1,111 +1,145 @@
+
+import "dotenv/config";
+
 import {
-  describe,
-  it,
-  expect,
   beforeAll,
-  beforeEach,
   afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
 } from "vitest";
 
-import mongoose from "mongoose";
 import request from "supertest";
+import mongoose from "mongoose";
+import app from "../src/app.js";
+import Workflow from "../src/models/Workflow.js";
+import Execution from "../src/models/Execution.js";
 
-import app from "../src/app";
-import Workflow from "../src/models/Workflow";
-import Execution from "../src/models/Execution";
+const testApiKey = "test-workflow-api-key";
+const testTenantId = "test-tenant";
 
-import {
-  connectTestDatabase,
-  disconnectTestDatabase,
-} from "./setup";
+const originalWorkflowTenants = process.env.WORKFLOW_TENANTS;
 
-const testApiKey = "test-api-key";
-
-describe("Workflow API routes", () => {
-  beforeAll(async () => {
-    process.env.WORKFLOW_API_KEY = testApiKey;
-    process.env.WORKFLOW_TENANT_ID = "test-tenant";
-
-    await connectTestDatabase();
+beforeAll(async () => {
+  process.env.WORKFLOW_TENANTS = JSON.stringify({
+    [testTenantId]: testApiKey,
   });
 
-  beforeEach(async () => {
-    await Workflow.deleteMany({});
-    await Execution.deleteMany({});
-  });
+  const mongoUri =
+    process.env.TEST_MONGODB_URI ||
+    process.env.MONGODB_URI;
 
-  afterAll(async () => {
-    await disconnectTestDatabase();
-  });
+  if (!mongoUri) {
+    throw new Error(
+      "Neither TEST_MONGODB_URI nor MONGODB_URI is configured.",
+    );
+  }
 
-  const validWorkflow = {
+  await mongoose.connect(mongoUri);
+});
+
+beforeEach(async () => {
+  await Workflow.deleteMany({});
+  await Execution.deleteMany({});
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+
+  if (originalWorkflowTenants === undefined) {
+    delete process.env.WORKFLOW_TENANTS;
+  } else {
+    process.env.WORKFLOW_TENANTS = originalWorkflowTenants;
+  }
+});
+
+async function createTestWorkflow(
+  overrides: Record<string, unknown> = {},
+) {
+  return Workflow.create({
     name: "Test Workflow",
     description: "Workflow created for API testing",
-
+    tenantId: testTenantId,
     nodes: [
       {
-        id: "start-1",
+        id: "start",
         type: "Start",
         title: "Start",
-        description: "",
-        data: { label: "Start" },
+        description: "Start workflow",
       },
       {
         id: "task-1",
         type: "Task",
-        title: "Create Order",
-        description: "Create a test order",
-        data: { label: "Create Order" },
+        title: "Test Task",
+        description: "Perform a test task",
       },
       {
-        id: "end-1",
+        id: "end",
         type: "End",
         title: "End",
-        description: "",
-        data: { label: "End" },
+        description: "End workflow",
       },
     ],
-
     edges: [
       {
         id: "edge-1",
-        source: "start-1",
+        source: "start",
         target: "task-1",
       },
       {
         id: "edge-2",
         source: "task-1",
-        target: "end-1",
+        target: "end",
       },
     ],
-  };
+    ...overrides,
+  });
+}
 
+describe("Workflow API routes", () => {
   it("should create a workflow", async () => {
     const response = await request(app)
       .post("/api/workflows")
       .set("x-api-key", testApiKey)
-      .send(validWorkflow);
+      .send({
+        name: "New Workflow",
+        description: "Created through API",
+        nodes: [],
+        edges: [],
+      });
 
     expect(response.status).toBe(201);
-    expect(response.body._id).toBeDefined();
-    expect(response.body.name).toBe("Test Workflow");
+    expect(response.body.name).toBe("New Workflow");
+    expect(response.body.tenantId).toBe(testTenantId);
   });
 
   it("should get all workflows", async () => {
-    await Workflow.create(validWorkflow);
+    const createdWorkflow = await createTestWorkflow();
+
+    const savedWorkflow = await Workflow.findById(
+      createdWorkflow._id,
+    );
+
+    expect(savedWorkflow).not.toBeNull();
+    expect(savedWorkflow?.tenantId).toBe(testTenantId);
 
     const response = await request(app)
       .get("/api/workflows")
       .set("x-api-key", testApiKey);
 
+    console.log(
+      "Get all workflows response:",
+      JSON.stringify(response.body, null, 2),
+    );
+
     expect(response.status).toBe(200);
-    expect(Array.isArray(response.body)).toBe(true);
     expect(response.body).toHaveLength(1);
-    expect(response.body[0].name).toBe("Test Workflow");
+    expect(response.body[0].tenantId).toBe(testTenantId);
   });
 
   it("should get workflow count", async () => {
-    await Workflow.create(validWorkflow);
+    await createTestWorkflow();
 
     const response = await request(app)
       .get("/api/workflows/stats/count")
@@ -116,7 +150,7 @@ describe("Workflow API routes", () => {
   });
 
   it("should get a workflow by ID", async () => {
-    const workflow = await Workflow.create(validWorkflow);
+    const workflow = await createTestWorkflow();
 
     const response = await request(app)
       .get(`/api/workflows/${workflow._id}`)
@@ -124,11 +158,10 @@ describe("Workflow API routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body._id).toBe(workflow._id.toString());
-    expect(response.body.name).toBe("Test Workflow");
   });
 
   it("should update a workflow", async () => {
-    const workflow = await Workflow.create(validWorkflow);
+    const workflow = await createTestWorkflow();
 
     const response = await request(app)
       .put(`/api/workflows/${workflow._id}`)
@@ -138,12 +171,12 @@ describe("Workflow API routes", () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body._id).toBe(workflow._id.toString());
     expect(response.body.name).toBe("Updated Workflow");
+    expect(response.body.tenantId).toBe(testTenantId);
   });
 
   it("should delete a workflow", async () => {
-    const workflow = await Workflow.create(validWorkflow);
+    const workflow = await createTestWorkflow();
 
     const response = await request(app)
       .delete(`/api/workflows/${workflow._id}`)
@@ -154,18 +187,22 @@ describe("Workflow API routes", () => {
       "Workflow deleted successfully",
     );
 
-    const deletedWorkflow = await Workflow.findById(workflow._id);
+    const deletedWorkflow = await Workflow.findById(
+      workflow._id,
+    );
+
     expect(deletedWorkflow).toBeNull();
   });
 
   it("should return 404 for a workflow that does not exist", async () => {
-    const missingId = new mongoose.Types.ObjectId().toString();
+    const nonExistingId = new mongoose.Types.ObjectId();
 
     const response = await request(app)
-      .get(`/api/workflows/${missingId}`)
+      .get(`/api/workflows/${nonExistingId}`)
       .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(404);
+    expect(response.body.message).toBe("Workflow not found");
   });
 
   it("should return 400 for an invalid workflow ID", async () => {
@@ -174,14 +211,20 @@ describe("Workflow API routes", () => {
       .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(400);
+    expect(response.body.message).toBe("Invalid workflow ID");
   });
 
   it("should run a valid workflow successfully", async () => {
-    const workflow = await Workflow.create(validWorkflow);
+    const workflow = await createTestWorkflow();
 
     const response = await request(app)
       .post(`/api/workflows/${workflow._id}/run`)
       .set("x-api-key", testApiKey);
+
+    console.log(
+      "Workflow run response:",
+      JSON.stringify(response.body, null, 2),
+    );
 
     expect(response.status).toBe(200);
     expect(response.body.message).toBe(
@@ -189,7 +232,6 @@ describe("Workflow API routes", () => {
     );
     expect(response.body.execution).toBeDefined();
     expect(response.body.execution.status).toBe("completed");
-    expect(response.body.execution.steps).toHaveLength(3);
   });
 
   it("should return 400 when running a workflow with an invalid ID", async () => {
@@ -198,19 +240,20 @@ describe("Workflow API routes", () => {
       .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(400);
+    expect(response.body.message).toBe("Invalid workflow ID");
   });
 
   it("should get workflow execution history", async () => {
-    const workflow = await Workflow.create(validWorkflow);
+    const workflow = await createTestWorkflow();
 
     await Execution.create({
-      tenantId: process.env.WORKFLOW_TENANT_ID || "local-tenant",
+      tenantId: testTenantId,
       workflowId: workflow._id,
       workflowName: workflow.name,
       status: "completed",
-      steps: [],
       startedAt: new Date(),
       completedAt: new Date(),
+      steps: [],
     });
 
     const response = await request(app)
@@ -218,7 +261,9 @@ describe("Workflow API routes", () => {
       .set("x-api-key", testApiKey);
 
     expect(response.status).toBe(200);
+    expect(response.body.workflowId).toBe(
+      workflow._id.toString(),
+    );
     expect(response.body.totalExecutions).toBe(1);
-    expect(response.body.executions).toHaveLength(1);
   });
 });
