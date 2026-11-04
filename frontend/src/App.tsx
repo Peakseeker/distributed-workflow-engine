@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+
 import {
   ReactFlow,
   Background,
@@ -16,6 +17,7 @@ import {
 } from '@xyflow/react'
 
 import '@xyflow/react/dist/style.css'
+
 import {
   LayoutDashboard,
   Workflow,
@@ -39,6 +41,27 @@ import {
 } from 'lucide-react'
 
 import './App.css'
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+
+const API_KEY = import.meta.env.VITE_API_KEY || ''
+
+const apiFetch = async (
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> => {
+  const headers = new Headers(options.headers)
+
+  headers.set('Content-Type', 'application/json')
+  headers.set('x-api-key', API_KEY)
+
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  })
+}
+
 type NodeType = 'Start' | 'Task' | 'End'
 
 type WorkflowNode = {
@@ -52,6 +75,7 @@ type WorkflowNode = {
 type FlowNodeData = {
   label: string
 }
+
 type Execution = {
   _id: string
   status: string
@@ -63,6 +87,7 @@ type WorkflowSnapshot = {
   nodes: WorkflowNode[]
   edges: Edge[]
 }
+
 const initialWorkflowNodes: WorkflowNode[] = [
   {
     id: 1,
@@ -83,45 +108,67 @@ const initialWorkflowNodes: WorkflowNode[] = [
     description: 'Workflow execution completes here.',
   },
 ]
+
 const createFlowNodes = (
   nodes: WorkflowNode[],
 ): Node<FlowNodeData>[] => {
   return nodes.map((node, index) => {
-    const borderColor =
-      node.type === 'Start'
-        ? '#22c55e'
-        : node.type === 'End'
-          ? '#ef4444'
-          : node.isNew
-            ? '#3b82f6'
-            : '#8b5cf6'
+    const isStart = node.type === 'Start'
+    const isEnd = node.type === 'End'
+    const isNewTask = node.type === 'Task' && node.isNew
 
-    const backgroundColor =
-      node.type === 'Start'
-        ? '#dcfce7'
-        : node.type === 'End'
-          ? '#fee2e2'
-          : node.isNew
-            ? '#dbeafe'
-            : '#ede9fe'
+    const borderColor = isStart
+      ? 'rgba(74, 222, 128, 0.75)'
+      : isEnd
+        ? 'rgba(251, 113, 133, 0.75)'
+        : isNewTask
+          ? 'rgba(56, 189, 248, 0.85)'
+          : 'rgba(167, 139, 250, 0.8)'
+
+    const backgroundColor = isStart
+      ? 'linear-gradient(135deg, rgba(20, 83, 45, 0.78), rgba(22, 101, 52, 0.48))'
+      : isEnd
+        ? 'linear-gradient(135deg, rgba(136, 19, 55, 0.78), rgba(159, 18, 57, 0.48))'
+        : isNewTask
+          ? 'linear-gradient(135deg, rgba(30, 64, 175, 0.78), rgba(14, 116, 144, 0.48))'
+          : 'linear-gradient(135deg, rgba(91, 33, 182, 0.78), rgba(67, 56, 202, 0.48))'
+
+    const glowColor = isStart
+      ? 'rgba(34, 197, 94, 0.18)'
+      : isEnd
+        ? 'rgba(244, 63, 94, 0.18)'
+        : isNewTask
+          ? 'rgba(56, 189, 248, 0.24)'
+          : 'rgba(139, 92, 246, 0.22)'
 
     return {
       id: String(node.id),
       type: 'default',
-      position: { x: 100 + index * 230, y: 150 },
-      data: { label: `${node.type}: ${node.title || '(Unnamed)'}` },
+      position: {
+        x: 100 + index * 230,
+        y: 150,
+      },
+      data: {
+        label: `${node.type}: ${node.title || '(Unnamed)'}`,
+      },
       style: {
-        width: 180,
-        padding: 16,
-        borderRadius: 12,
-        border: `2px solid ${borderColor}`,
+        width: 200,
+        padding: 18,
+        borderRadius: 16,
+        border: `1px solid ${borderColor}`,
         background: backgroundColor,
-        color: '#1f2937',
-        fontWeight: 600,
+        color: '#f8fafc',
+        fontWeight: 700,
+        fontSize: 14,
+        backdropFilter: 'blur(18px)',
+        WebkitBackdropFilter: 'blur(18px)',
+        boxShadow: `0 12px 28px ${glowColor}, inset 0 1px 0 rgba(255,255,255,0.18)`,
+        transition: 'all 0.2s ease',
       },
     }
   })
 }
+
 const createFlowEdges = (nodes: WorkflowNode[]): Edge[] => {
   return nodes.slice(0, -1).map((node, index) => ({
     id: `e${node.id}-${nodes[index + 1].id}`,
@@ -129,15 +176,17 @@ const createFlowEdges = (nodes: WorkflowNode[]): Edge[] => {
     target: String(nodes[index + 1].id),
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: '#9ca3af',
+      color: '#a78bfa',
     },
     animated: true,
     style: {
-      stroke: '#9ca3af',
-      strokeWidth: 2,
+      stroke: '#a78bfa',
+      strokeWidth: 2.5,
+      filter: 'drop-shadow(0 0 4px rgba(139, 92, 246, 0.45))',
     },
   }))
 }
+
 const validateWorkflow = (
   workflowName: string,
   nodes: WorkflowNode[],
@@ -163,6 +212,7 @@ const validateWorkflow = (
   if (nodes.length < 2) {
     errors.push('Workflow must contain at least a Start and End node.')
   }
+
   const ids = new Set<number>()
 
   nodes.forEach((node) => {
@@ -232,6 +282,7 @@ function App() {
   const currentNode = workflowNodes.find(
     (node) => node.id === selectedNode,
   )
+
   const createSnapshot = (): WorkflowSnapshot => ({
     name: workflowName,
     nodes: workflowNodes.map((node) => ({ ...node })),
@@ -255,6 +306,7 @@ function App() {
     setValidationErrors([])
     setShowValidation(false)
   }
+
   const undoChange = () => {
     if (undoStack.length === 0) {
       setNotice('Nothing to undo.')
@@ -276,6 +328,7 @@ function App() {
     setShowValidation(false)
     setNotice('Last workflow change undone.')
   }
+
   const redoChange = () => {
     if (redoStack.length === 0) {
       setNotice('Nothing to redo.')
@@ -297,6 +350,7 @@ function App() {
     setShowValidation(false)
     setNotice('Workflow change restored.')
   }
+
   const addTask = () => {
     const endIndex = workflowNodes.findIndex(
       (node) => node.type === 'End',
@@ -314,6 +368,7 @@ function App() {
     }
 
     const updatedNodes = [...workflowNodes]
+
     updatedNodes.splice(
       endIndex === -1 ? updatedNodes.length : endIndex,
       0,
@@ -324,6 +379,7 @@ function App() {
     setSelectedNode(newTask.id)
     setNotice('New task added. Save the workflow to confirm it.')
   }
+
   const deleteTask = () => {
     const nodeToDelete = workflowNodes.find(
       (node) => node.id === selectedNode,
@@ -340,22 +396,28 @@ function App() {
       (node) => node.id !== selectedNode,
     )
 
-    const remainingIds = new Set(updatedNodes.map((node) => String(node.id)))
+    const remainingIds = new Set(
+      updatedNodes.map((node) => String(node.id)),
+    )
+
     const updatedEdges = flowEdges.filter(
       (edge) =>
-        remainingIds.has(edge.source) && remainingIds.has(edge.target),
+        remainingIds.has(edge.source) &&
+        remainingIds.has(edge.target),
     )
 
     setDeletedTask(nodeToDelete)
     syncWorkflow(updatedNodes, updatedEdges)
 
     const nextNode =
-      updatedNodes.find((node) => node.type === 'Task') ?? updatedNodes[0]
+      updatedNodes.find((node) => node.type === 'Task') ??
+      updatedNodes[0]
 
     if (nextNode) setSelectedNode(nextNode.id)
 
     setNotice(`${nodeToDelete.title} deleted. You can undo this action.`)
   }
+
   const undoDeleteTask = () => {
     if (!deletedTask) return
 
@@ -365,7 +427,9 @@ function App() {
     }
 
     const updatedNodes = [...workflowNodes]
-    const endIndex = updatedNodes.findIndex((node) => node.type === 'End')
+    const endIndex = updatedNodes.findIndex(
+      (node) => node.type === 'End',
+    )
 
     updatedNodes.splice(
       endIndex === -1 ? updatedNodes.length : endIndex,
@@ -378,6 +442,7 @@ function App() {
     setDeletedTask(null)
     setNotice('Task restored. Save to store your changes.')
   }
+
   const deleteSelectedConnection = () => {
     if (!selectedEdge) {
       setNotice('Select a connection on the canvas first.')
@@ -408,6 +473,7 @@ function App() {
     setSelectedEdge(null)
     setNotice('Connection deleted. You can use Undo to restore it.')
   }
+
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData>>[]) => {
       const safeChanges = changes.filter(
@@ -433,6 +499,7 @@ function App() {
     },
     [],
   )
+
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return
@@ -453,10 +520,14 @@ function App() {
             id: `e${connection.source}-${connection.target}-${Date.now()}`,
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: '#9ca3af',
+              color: '#38bdf8',
             },
             animated: true,
-            style: { stroke: '#9ca3af', strokeWidth: 2 },
+            style: {
+              stroke: '#a78bfa',
+              strokeWidth: 2.5,
+              filter: 'drop-shadow(0 0 4px rgba(139, 92, 246, 0.45))',
+            },
           },
           edges,
         ),
@@ -467,7 +538,7 @@ function App() {
     },
     [workflowName, workflowNodes, flowEdges],
   )
-  const saveWorkflow = async (): Promise<string | null> => {
+    const saveWorkflow = async (): Promise<string | null> => {
     const errors = validateWorkflow(
       workflowName,
       workflowNodes,
@@ -486,6 +557,7 @@ function App() {
       ...node,
       isNew: false,
     }))
+
     const draft = {
       name: workflowName.trim(),
       nodes: savedNodes,
@@ -494,20 +566,21 @@ function App() {
     }
 
     localStorage.setItem('flowpilot-workflow', JSON.stringify(draft))
+
     setWorkflowNodes(savedNodes)
     setFlowNodes(createFlowNodes(savedNodes))
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         workflowId
-          ? `http://localhost:5000/api/workflows/${workflowId}`
-          : 'http://localhost:5000/api/workflows',
+          ? `/workflows/${workflowId}`
+          : '/workflows',
         {
           method: workflowId ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(draft),
         },
       )
+
       const result = await response.json().catch(() => null)
 
       if (!response.ok) {
@@ -538,6 +611,7 @@ function App() {
       return null
     }
   }
+
   const runWorkflow = async () => {
     if (isRunning) return
 
@@ -568,19 +642,17 @@ function App() {
       const savedId = await saveWorkflow()
 
       if (!savedId) return
-      const response = await fetch(
-        `http://localhost:5000/api/workflows/${savedId}/run`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        },
-      )
+
+      const response = await apiFetch(`/workflows/${savedId}/run`, {
+        method: 'POST',
+      })
 
       const result = await response.json().catch(() => null)
 
       if (!response.ok) {
         setNotice(
-          result?.message ?? 'Workflow was saved, but execution failed to start.',
+          result?.message ??
+            'Workflow was saved, but execution failed to start.',
         )
         return
       }
@@ -593,6 +665,7 @@ function App() {
       setIsRunning(false)
     }
   }
+
   const loadExecutions = async (id = workflowId) => {
     if (!id) {
       setExecutions([])
@@ -602,10 +675,7 @@ function App() {
     setIsLoadingExecutions(true)
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/workflows/${id}/executions`,
-      )
-
+      const response = await apiFetch(`/workflows/${id}/executions`)
       const result = await response.json().catch(() => null)
 
       if (!response.ok) {
@@ -626,6 +696,7 @@ function App() {
       setIsLoadingExecutions(false)
     }
   }
+
   useEffect(() => {
     const savedDraft = localStorage.getItem('flowpilot-workflow')
 
@@ -656,6 +727,7 @@ function App() {
       localStorage.removeItem('flowpilot-workflow')
     }
   }, [])
+
   const handleWorkflowNameChange = (value: string) => {
     setUndoStack((stack) => [...stack, createSnapshot()].slice(-30))
     setRedoStack([])
@@ -673,8 +745,6 @@ function App() {
     }
   }
 
-  
-
   const startNodeCount = workflowNodes.filter(
     (node) => node.type === 'Start',
   ).length
@@ -686,6 +756,7 @@ function App() {
   const endNodeCount = workflowNodes.filter(
     (node) => node.type === 'End',
   ).length
+
   const changePage = (page: string) => {
     setActivePage(page)
     setNotice('')
@@ -696,7 +767,9 @@ function App() {
 
     const parsedDate = new Date(date)
 
-    if (Number.isNaN(parsedDate.getTime())) return 'Date unavailable'
+    if (Number.isNaN(parsedDate.getTime())) {
+      return 'Date unavailable'
+    }
 
     return parsedDate.toLocaleString()
   }
@@ -727,6 +800,7 @@ function App() {
 
     return '#64748b'
   }
+
   const pageTitle =
     activePage === 'Workflow Editor'
       ? 'Workflow Editor'
@@ -740,7 +814,7 @@ function App() {
         : activePage === 'Executions'
           ? 'Review recent workflow execution history.'
           : 'Review workflow validation and safety checks.'
-  return (
+            return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
@@ -818,6 +892,7 @@ function App() {
           </div>
         </div>
       </aside>
+
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-heading">
@@ -868,6 +943,7 @@ function App() {
               </button>
             </div>
           )}
+
           {activePage === 'Workflow Editor' && (
             <>
               <div className="editor-toolbar">
@@ -924,6 +1000,7 @@ function App() {
                   </button>
                 </div>
               </div>
+
               <div className="workflow-summary">
                 <div className="summary-card">
                   <span className="summary-icon start-summary">
@@ -965,6 +1042,7 @@ function App() {
                   </div>
                 </div>
               </div>
+
               <div className="editor-layout">
                 <section className="canvas-panel">
                   <div className="panel-heading">
@@ -975,7 +1053,9 @@ function App() {
 
                     <button
                       className="canvas-tool-button"
-                      onClick={() => setShowColorLegend((visible) => !visible)}
+                      onClick={() =>
+                        setShowColorLegend((visible) => !visible)
+                      }
                       title="Toggle node color legend"
                     >
                       <Palette size={17} />
@@ -984,10 +1064,18 @@ function App() {
 
                   {showColorLegend && (
                     <div className="color-legend">
-                      <span><i className="legend-dot start-dot" /> Start</span>
-                      <span><i className="legend-dot task-dot" /> Task</span>
-                      <span><i className="legend-dot new-dot" /> New Task</span>
-                      <span><i className="legend-dot end-dot" /> End</span>
+                      <span>
+                        <i className="legend-dot start-dot" /> Start
+                      </span>
+                      <span>
+                        <i className="legend-dot task-dot" /> Task
+                      </span>
+                      <span>
+                        <i className="legend-dot new-dot" /> New Task
+                      </span>
+                      <span>
+                        <i className="legend-dot end-dot" /> End
+                      </span>
                     </div>
                   )}
 
@@ -1003,25 +1091,30 @@ function App() {
                       onConnect={onConnect}
                       onNodeClick={(_, node) => selectNode(node.id)}
                       onEdgeClick={(_, edge) => setSelectedEdge(edge.id)}
-                      onPaneClick={() => {
-                        setSelectedEdge(null)
-                      }}
+                      onPaneClick={() => setSelectedEdge(null)}
                       fitView
                       fitViewOptions={{ padding: 0.2 }}
                       nodesDraggable
                       nodesConnectable
                       elementsSelectable
                     >
-                      <Background gap={20} size={1} />
+                      <Background
+                        gap={20}
+                        size={1}
+                        color="rgba(196, 181, 253, 0.18)"
+                      />
                       <Controls />
                       <MiniMap pannable zoomable />
                     </ReactFlow>
                   </div>
+
                   <div className="canvas-footer">
                     <span>
                       <span className="live-dot" /> Canvas ready
                     </span>
-                    <span>{flowNodes.length} nodes · {flowEdges.length} connections</span>
+                    <span>
+                      {flowNodes.length} nodes · {flowEdges.length} connections
+                    </span>
                   </div>
                 </section>
 
@@ -1036,7 +1129,9 @@ function App() {
                   {currentNode ? (
                     <div className="properties-content">
                       <div className="selected-node-badge">
-                        <span className={`node-type-dot ${currentNode.type.toLowerCase()}-dot`} />
+                        <span
+                          className={`node-type-dot ${currentNode.type.toLowerCase()}-dot`}
+                        />
                         {currentNode.type} Node
                       </div>
 
@@ -1082,6 +1177,7 @@ function App() {
                         <span>Node type</span>
                         <strong>{currentNode.type}</strong>
                       </div>
+
                       <div className="property-divider" />
 
                       <button
@@ -1112,7 +1208,8 @@ function App() {
                       </button>
 
                       <p className="property-help">
-                        Select a node or connection on the canvas to edit or remove it.
+                        Select a node or connection on the canvas to edit or
+                        remove it.
                       </p>
                     </div>
                   ) : (
@@ -1124,7 +1221,8 @@ function App() {
                   )}
                 </aside>
               </div>
-                            <div className="editor-bottom-grid">
+
+              <div className="editor-bottom-grid">
                 <section className="bottom-panel">
                   <div className="panel-heading">
                     <div>
@@ -1139,7 +1237,10 @@ function App() {
                   {showValidation && validationErrors.length > 0 ? (
                     <div className="validation-list">
                       {validationErrors.map((error, index) => (
-                        <div className="validation-item" key={`${error}-${index}`}>
+                        <div
+                          className="validation-item"
+                          key={`${error}-${index}`}
+                        >
                           <AlertTriangle size={16} />
                           <span>{error}</span>
                         </div>
@@ -1184,6 +1285,7 @@ function App() {
                     Validate Workflow
                   </button>
                 </section>
+
                 <section className="bottom-panel">
                   <div className="panel-heading">
                     <div>
@@ -1206,10 +1308,7 @@ function App() {
                   {executions.length > 0 ? (
                     <div className="execution-list">
                       {executions.slice(0, 4).map((execution) => (
-                        <div
-                          className="execution-row"
-                          key={execution._id}
-                        >
+                        <div className="execution-row" key={execution._id}>
                           <div className="execution-status-icon">
                             <Activity size={17} />
                           </div>
@@ -1246,6 +1345,7 @@ function App() {
               </div>
             </>
           )}
+
           {activePage === 'Dashboard' && (
             <div className="page-section">
               <div className="workflow-summary">
@@ -1307,10 +1407,7 @@ function App() {
                     Open Editor
                   </button>
 
-                  <button
-                    className="secondary-button"
-                    onClick={addTask}
-                  >
+                  <button className="secondary-button" onClick={addTask}>
                     <Plus size={17} />
                     Add Task
                   </button>
@@ -1327,6 +1424,7 @@ function App() {
               </section>
             </div>
           )}
+
           {activePage === 'Executions' && (
             <section className="bottom-panel standalone-panel">
               <div className="panel-heading">
@@ -1348,10 +1446,7 @@ function App() {
               {executions.length > 0 ? (
                 <div className="execution-list">
                   {executions.map((execution) => (
-                    <div
-                      className="execution-row"
-                      key={execution._id}
-                    >
+                    <div className="execution-row" key={execution._id}>
                       <div className="execution-status-icon">
                         <Activity size={17} />
                       </div>
@@ -1384,7 +1479,7 @@ function App() {
               )}
             </section>
           )}
-          
+
           {activePage === 'Safety Center' && (
             <div className="safety-page-grid">
               <section className="bottom-panel standalone-panel">
@@ -1479,6 +1574,5 @@ function App() {
     </div>
   )
 }
-
 
 export default App
