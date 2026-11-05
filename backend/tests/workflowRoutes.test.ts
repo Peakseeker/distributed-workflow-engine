@@ -1,4 +1,3 @@
-
 import "dotenv/config";
 
 import {
@@ -98,6 +97,44 @@ async function createTestWorkflow(
 }
 
 describe("Workflow API routes", () => {
+  // Multi-tenant security tests
+
+  it("should reject requests with a missing API key", async () => {
+    const response = await request(app).get("/api/workflows");
+
+    expect(response.status).toBe(401);
+    expect(response.body.message).toBe(
+      "Invalid or missing API key.",
+    );
+  });
+
+  it("should reject requests with an invalid API key", async () => {
+    const response = await request(app)
+      .get("/api/workflows")
+      .set("x-api-key", "invalid-api-key");
+
+    expect(response.status).toBe(401);
+    expect(response.body.message).toBe(
+      "Invalid or missing API key.",
+    );
+  });
+
+  it("should prevent one tenant from accessing another tenant's workflow", async () => {
+    const tenantBWorkflow = await createTestWorkflow({
+      tenantId: "tenant-b",
+      name: "Tenant B Private Workflow",
+    });
+
+    const response = await request(app)
+      .get(`/api/workflows/${tenantBWorkflow._id}`)
+      .set("x-api-key", testApiKey);
+
+    expect(response.status).toBe(404);
+    expect(response.body.message).toBe("Workflow not found");
+  });
+
+  // Existing workflow API tests
+
   it("should create a workflow", async () => {
     const response = await request(app)
       .post("/api/workflows")
