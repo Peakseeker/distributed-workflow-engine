@@ -181,10 +181,38 @@ router.post("/:id/run", async (req, res) => {
     });
 
     // Execute workflow using Saga Engine.
-    const result = await runSaga(nodes, edges, {
-      maxRetries: 2,
-      retryDelayMs: 250,
-    });
+   const result = await runSaga(nodes, edges, {
+  maxRetries: 2,
+  retryDelayMs: 250,
+  taskHandler: async ({ node }) => {
+    const action = String(node.data?.action ?? "log");
+
+    if (action !== "log") {
+      throw new Error(
+        `Unsupported task action "${action}" in task "${node.title}".`
+      );
+    }
+
+    const message = String(
+      node.data?.message ?? node.description
+    ).trim();
+
+    if (!message) {
+      throw new Error(
+        `Task "${node.title}" has no message to log.`
+      );
+    }
+
+    console.log(`[FlowPilot Task: ${node.title}] ${message}`);
+
+    return {
+      action: "log",
+      task: node.title,
+      message,
+      loggedAt: new Date().toISOString(),
+    };
+  },
+});
 
     // Store execution step results.
     execution.steps = result.steps.map((step) => ({
