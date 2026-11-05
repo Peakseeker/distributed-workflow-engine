@@ -44,7 +44,7 @@ describe("runSaga", () => {
     ).toBe(true);
   });
 
-  it("fails when a task has no description", async () => {
+  it("fails when a task has no message to log", async () => {
     const invalidNodes: WorkflowNode[] = nodes.map((node) =>
       node.id === "task-1"
         ? { ...node, description: "" }
@@ -56,7 +56,7 @@ describe("runSaga", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.error).toContain("has no description");
+    expect(result.error).toContain("has no message to log");
   });
 
   it("retries a failed task and succeeds when it later passes", async () => {
@@ -216,4 +216,20 @@ describe("runSaga", () => {
       ),
     ).toBe(true);
   });
+    it("fails after exhausting all retry attempts", async () => {
+    const taskHandler = vi.fn(async () => {
+      throw new Error("Permanent failure");
+    });
+
+    const result = await runSaga(nodes, edges, {
+      maxRetries: 2,
+      retryDelayMs: 0,
+      taskHandler,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(taskHandler).toHaveBeenCalledTimes(3);
+    expect(result.error).toContain("Permanent failure");
+  });
 });
+
