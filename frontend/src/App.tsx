@@ -69,9 +69,12 @@ type WorkflowNode = {
   type: NodeType
   title: string
   description: string
+  data?: {
+    action?: 'log'
+    message?: string
+  }
   isNew?: boolean
 }
-
 type FlowNodeData = {
   label: string
 }
@@ -1165,6 +1168,58 @@ function App() {
                         }}
                         placeholder="Describe this node"
                       />
+{currentNode.type === 'Task' && (
+  <>
+    <div className="property-divider" />
+
+    <h4>Task Configuration</h4>
+
+    <label htmlFor="task-action">Task action</label>
+    <select
+      id="task-action"
+      value={currentNode.data?.action ?? 'log'}
+      onChange={(event) => {
+        const updatedNodes = workflowNodes.map((node) =>
+          node.id === currentNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  action: event.target.value as 'log',
+                },
+              }
+            : node,
+        )
+        syncWorkflow(updatedNodes)
+      }}
+    >
+      <option value="log">Log Message</option>
+    </select>
+
+    <label htmlFor="task-message">Task message</label>
+    <textarea
+      id="task-message"
+      rows={3}
+      value={currentNode.data?.message ?? currentNode.description}
+      onChange={(event) => {
+        const updatedNodes = workflowNodes.map((node) =>
+          node.id === currentNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  action: 'log' as const,
+                  message: event.target.value,
+                },
+              }
+            : node,
+        )
+        syncWorkflow(updatedNodes)
+      }}
+      placeholder="Enter the message this task should log"
+    />
+  </>
+)}
 
                       <div className="property-divider" />
 
