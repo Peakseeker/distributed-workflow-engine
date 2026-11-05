@@ -189,17 +189,31 @@ async function defaultTaskHandler(
   context: TaskContext
 ): Promise<unknown> {
   const description = context.node.description?.trim() ?? "";
+  const action = String(context.node.data?.action ?? "log");
 
-  if (!description) {
+  if (action !== "log") {
     throw new Error(
-      `Task "${getNodeName(context.node)}" has no description.`
+      `Unsupported task action "${action}" in task "${getNodeName(context.node)}".`
     );
   }
 
+  const message = String(
+    context.node.data?.message ?? description
+  ).trim();
+
+  if (!message) {
+    throw new Error(
+      `Task "${getNodeName(context.node)}" has no message to log.`
+    );
+  }
+
+  console.log(`[FlowPilot Task: ${getNodeName(context.node)}] ${message}`);
+
   return {
-    message: "Task configuration validated.",
+    action: "log",
     task: getNodeName(context.node),
-    description,
+    message,
+    loggedAt: new Date().toISOString(),
   };
 }
 
